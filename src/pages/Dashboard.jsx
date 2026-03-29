@@ -33,6 +33,8 @@ export default function Dashboard() {
   const bestGpa = semesters.length > 0 ? Math.max(...semesters.map((semester) => Number(semester.gpa) || 0)) : null;
   const totalCredits = semesters.reduce((sum, semester) => sum + (Number(semester.totalCredits) || 0), 0);
   const initials = (auth.currentUser?.email || "A").slice(0, 1).toUpperCase();
+  const latestSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null;
+  const nextSemester = latestSemester ? Math.min(8, Number(latestSemester.semNum) + 1) : 1;
   const previousGpa = semesters.length > 1 ? Number(semesters[semesters.length - 2]?.gpa || 0) : 0;
   const diff = semesters.length > 1 ? (cgpa - previousGpa).toFixed(2) : null;
   const progress = Math.max(0, Math.min(364.4, (cgpa / 10) * 364.4));
@@ -84,11 +86,7 @@ export default function Dashboard() {
 
       <main className="pt-24 px-6 lg:pt-6 lg:px-8 lg:pb-8">
         <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#64d8d8]">Dashboard Overview</p>
-              <h2 className="text-lg font-bold text-[#dae2fd] mt-2">Academic Performance Snapshot</h2>
-            </div>
+          <div className="flex items-center justify-end gap-4">
             <button
               type="button"
               onClick={() => navigate("/calculator")}
@@ -102,7 +100,12 @@ export default function Dashboard() {
             <div className="bg-[#222a3d] rounded-xl p-8 relative overflow-hidden flex flex-col justify-between min-h-[320px] shadow-2xl border border-[#424754]/5">
               <div className="absolute -top-10 -right-10 w-64 h-64 bg-[#adc6ff]/10 rounded-full blur-[80px]" />
               <div className="relative">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#64d8d8]">Cumulative Grade Point Average</p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#64d8d8]">Cumulative Grade Point Average</p>
+                  <span className="bg-[#64d8d8]/10 text-[#64d8d8] text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-[0.2em]">
+                    Semester {latestSemester ? latestSemester.semNum : nextSemester}
+                  </span>
+                </div>
                 <div className="flex items-baseline gap-4 mt-4">
                   <h1 className={`text-8xl md:text-9xl font-black tracking-tighter ${cgpa >= 8.5 ? "text-white" : cgpa >= 6.5 ? "text-[#64d8d8]" : cgpa > 0 ? "text-[#ffb4ab]" : "text-[#8c909f]"}`}>{cgpa.toFixed(2)}</h1>
                   {semesters.length > 1 ? (
@@ -112,6 +115,11 @@ export default function Dashboard() {
                     </div>
                   ) : null}
                 </div>
+                <p className="text-xs text-[#c2c6d6] mt-4">
+                  {latestSemester
+                    ? `Latest saved result: Semester ${latestSemester.semNum}`
+                    : "No semester saved yet. Start with Semester 1."}
+                </p>
               </div>
               <div className="relative flex items-center gap-6 mt-8">
                 <div className="flex-1 h-[2px] bg-[#424754]/20 rounded-full overflow-hidden">
@@ -153,7 +161,7 @@ export default function Dashboard() {
             <div className="bg-[#131b2e] rounded-xl p-5 border border-[#424754]/5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#c2c6d6]">Current Semester</span>
               <div className="flex justify-between items-end mt-2">
-                <p className="text-2xl font-bold text-[#dae2fd]">Sem {semesters.length + 1}</p>
+                <p className="text-2xl font-bold text-[#dae2fd]">Sem {nextSemester}</p>
                 <span className="material-symbols-outlined text-[#adc6ff]">school</span>
               </div>
             </div>

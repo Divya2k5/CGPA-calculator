@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../firebase/config.js";
 import { SYLLABUS } from "../data/syllabus.js";
@@ -44,8 +44,9 @@ export default function Calculator() {
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanResults, setScanResults] = useState(null);
-  const [ocrRawText, setOcrRawText] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
   const [autoCalculated, setAutoCalculated] = useState(false);
+  const lastSavedSignatureRef = useRef("");
 
   useEffect(() => {
     const data = SYLLABUS[regulation]?.[department]?.[semester];
@@ -56,16 +57,66 @@ export default function Calculator() {
     }
     setLiveGPA(0);
     setScanResults(null);
-    setOcrRawText("");
+    setSaveStatus("");
     setAutoCalculated(false);
+    lastSavedSignatureRef.current = "";
   }, [regulation, department, semester]);
 
   useEffect(() => {
-    if (subjects.length > 0) {
-      const result = calculateGPA(subjects);
-      setLiveGPA(result.gpa);
+    if (subjects.length === 0) {
+      setLiveGPA(0);
+      return;
     }
-  }, [subjects]);
+
+    const result = calculateGPA(subjects);
+    setLiveGPA(result.gpa);
+
+    if (!result.isComplete) {
+      setAutoCalculated(false);
+      return;
+    }
+
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      return;
+    }
+
+    const signature = JSON.stringify({
+      regulation,
+      department,
+      semester,
+      gpa: result.gpa,
+      totalCredits: result.totalCredits,
+      subjects: subjects.map(({ code, grade, credits }) => ({ code, grade, credits }))
+    });
+
+    if (lastSavedSignatureRef.current === signature) {
+      setAutoCalculated(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    saveSemesterResult(uid, semester, result.gpa, result.totalCredits, subjects)
+      .then(() => {
+        if (cancelled) {
+          return;
+        }
+        lastSavedSignatureRef.current = signature;
+        setAutoCalculated(true);
+        setSaveStatus("Saved to history automatically.");
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        setSaveStatus(err.message);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [subjects, regulation, department, semester]);
 
   const GRADE_OPTIONS = ["", "O", "A+", "A", "B+", "B", "C", "RA", "U/A"];
   const gradedSubjects = subjects.filter((subject) => subject.grade).length;
@@ -140,16 +191,7 @@ export default function Calculator() {
       if (matchedCount > 0) {
         const result = calculateGPA(copy)
         setLiveGPA(result.gpa)
-        
-        if (result.isComplete) {
-          const uid = auth.currentUser?.uid
-          if (uid) {
-            await saveSemesterResult(
-              uid, semester, result.gpa, result.totalCredits, copy
-            )
-            setAutoCalculated(true)
-          }
-        }
+        setAutoCalculated(result.isComplete)
       }
 
     } catch (err) {
@@ -177,88 +219,40 @@ export default function Calculator() {
     }
   }
 
-  function tryFuzzyMatch(rawText, subjectList) {
-    const results = [];
-    const gradePatterns = ["A+", "B+", "RA", "U/A", "O", "A", "B", "C"];
-
-    subjectList.forEach((subject) => {
-      const words = subject.name
-        .toUpperCase()
-        .split(" ")
-        .filter((word) => word.length > 3);
-
-      const lines = rawText.toUpperCase().split("\n");
-      const matchedLine = lines.find((line) => {
-        const matchCount = words.filter((word) => line.includes(word)).length;
-        return matchCount >= 2;
-      });
-
-      if (matchedLine) {
-        for (const grade of gradePatterns) {
-          const escaped = grade.replace("+", "\\+");
-          if (new RegExp("\\b" + escaped + "\\b").test(matchedLine)) {
-            results.push({ code: subject.code, grade });
-            break;
-          }
-        }
-      }
-    });
-
-    return results;
-  }
-
-  async function applyMatches(matches, method = "code") {
-    const copy = [...subjects];
-    let matchedCount = 0;
-
-    matches.forEach(({ code, grade }) => {
-      const idx = copy.findIndex(
-        (subject) => subject.code && subject.code.replace(/\s/g, "") === code.replace(/\s/g, "")
-      );
-
-      if (idx !== -1 && grade) {
-        copy[idx] = { ...copy[idx], grade };
-        matchedCount++;
-      }
-    });
-
-    setSubjects(copy);
-    setScanResults({
-      matched: matchedCount,
-      unmatched: copy.length - matchedCount,
-      method
-    });
-
-    if (matchedCount > 0) {
-      await autoSaveAfterScan(copy);
-    }
-  }
-
-  async function autoSaveAfterScan(updatedSubjects) {
-    const result = calculateGPA(updatedSubjects);
-    setLiveGPA(result.gpa);
-
-    if (result.isComplete) {
-      const uid = auth.currentUser?.uid;
-      if (uid) {
-        await saveSemesterResult(uid, semester, result.gpa, result.totalCredits, updatedSubjects);
-        setAutoCalculated(true);
-      }
-    }
-  }
-
   const handleSave = () => {
     setScanning(false);
     setSaving(true);
     const result = calculateGPA(subjects);
     const uid = auth?.currentUser?.uid;
+
     if (!uid) {
       alert("Not logged in");
       setSaving(false);
       return;
     }
+
+    if (!result.isComplete) {
+      alert("Enter grades for all subjects to save this semester.");
+      setSaving(false);
+      return;
+    }
+
+    const signature = JSON.stringify({
+      regulation,
+      department,
+      semester,
+      gpa: result.gpa,
+      totalCredits: result.totalCredits,
+      subjects: subjects.map(({ code, grade, credits }) => ({ code, grade, credits }))
+    });
+
     saveSemesterResult(uid, semester, result.gpa, result.totalCredits, subjects)
-      .then(() => navigate("/dashboard"))
+      .then(() => {
+        lastSavedSignatureRef.current = signature;
+        setAutoCalculated(true);
+        setSaveStatus("Saved to history.");
+        setSaving(false);
+      })
       .catch((err) => {
         alert(err.message);
         setSaving(false);
@@ -403,7 +397,7 @@ export default function Calculator() {
                     <div>
                       <p className="text-sm font-semibold text-[#64d8d8]">{scanResults.matched} grades filled automatically</p>
                       <p className="text-xs text-[#c2c6d6] mt-1">{scanResults.unmatched} subjects need manual entry</p>
-                      {autoCalculated ? <p className="text-xs text-[#adc6ff] mt-1 font-medium">GPA calculated and saved to your history ?</p> : null}
+                      {autoCalculated ? <p className="text-xs text-[#adc6ff] mt-1 font-medium">GPA calculated and saved to your history.</p> : null}
                     </div>
                   </div>
                   <button type="button" onClick={() => setScanResults(null)} className="text-[10px] text-[#8c909f] mt-3 underline">Scan again</button>
@@ -492,7 +486,7 @@ export default function Calculator() {
       </div>
 
       <div className="fixed bottom-[5rem] left-0 right-0 px-6 pb-0 pt-0 z-40 translate-y-[4.75rem]">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto space-y-2">
           <button
             type="button"
             className="w-full font-bold py-4 rounded-xl text-sm active:scale-95 transition-all disabled:opacity-50"
@@ -500,8 +494,11 @@ export default function Calculator() {
             onClick={handleSave}
             disabled={saving}
           >
-            {saving ? "Saving..." : "Save Semester"}
+            {saving ? "Saving..." : "Save to History"}
           </button>
+          <p className="text-center text-[11px] text-[#8c909f]">
+            {saveStatus || "Completed GPA calculations are saved to history automatically."}
+          </p>
         </div>
       </div>
 
