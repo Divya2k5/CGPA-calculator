@@ -84,18 +84,9 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <main className="pt-24 px-6 lg:pt-6 lg:px-8 lg:pb-8">
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="flex items-center justify-end gap-4">
-            <button
-              type="button"
-              onClick={() => navigate("/calculator")}
-              className="bg-[#adc6ff] text-[#002e6a] rounded-xl px-4 py-2.5 text-sm font-bold"
-            >
-              Add Semester
-            </button>
-          </div>
-
+      <main className="pt-20 px-6 lg:pt-20 lg:px-8 lg:pb-8">
+        <div className="max-w-7xl mx-auto space-y-8">
+          
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)_minmax(0,1fr)] gap-6">
             <div className="bg-[#222a3d] rounded-xl p-8 relative overflow-hidden flex flex-col justify-between min-h-[320px] shadow-2xl border border-[#424754]/5">
               <div className="absolute -top-10 -right-10 w-64 h-64 bg-[#adc6ff]/10 rounded-full blur-[80px]" />
