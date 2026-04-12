@@ -13,8 +13,10 @@ export function gradeToPoints(grade) {
     case "C":
       return 5;
     case "RA":
-      return 0;
     case "U/A":
+    case "WH":
+    case "SA":
+    case "AB":
       return 0;
     default:
       return 0;
@@ -58,7 +60,7 @@ export function calculateGPA(subjects) {
     gpa,
     totalCredits,
     gradedCredits,
-    isComplete
+    isComplete,
   };
 }
 
@@ -83,4 +85,15 @@ export function calculateCGPA(semesters) {
   );
 
   return Number((totalWeightedGpa / totalCredits).toFixed(2));
+}
+
+export function calculateManualCGPA(gpas) {
+  const validGpas = gpas.filter((gpa) => Number.isFinite(gpa));
+
+  if (validGpas.length === 0) {
+    return 0;
+  }
+
+  const total = validGpas.reduce((sum, gpa) => sum + gpa, 0);
+  return Number((total / validGpas.length).toFixed(2));
 }

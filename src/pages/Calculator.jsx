@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../firebase/config.js";
 import { SYLLABUS } from "../data/syllabus.js";
 import { calculateGPA } from "../utils/gpaCalculator.js";
-import { saveSemesterResult, saveCrowdsourcedSubject } from "../firebase/firestore.js";
+import { saveCrowdsourcedSubject, saveSemesterResult } from "../firebase/firestore.js";
+import { matchExtractedSubjectsToSemester } from "../utils/marksheetParsing.js";
 import BottomNav from "../components/BottomNav.jsx";
 
 const DEPARTMENTS = ["ECE", "CSE", "IT", "MECH", "CIVIL", "EEE"];
@@ -13,14 +14,14 @@ const DEPARTMENT_VALUE_MAP = {
   IT: "IT",
   MECH: "Mech",
   CIVIL: "Civil",
-  EEE: "EEE"
+  EEE: "EEE",
 };
 
 function getGradeColor(grade) {
   if (grade === "O" || grade === "A+") return "text-[#64d8d8] border-[#64d8d8]/40";
   if (grade === "A" || grade === "B+") return "text-[#adc6ff] border-[#adc6ff]/40";
   if (grade === "B" || grade === "C") return "text-[#ffb2b7] border-[#ffb2b7]/40";
-  if (grade === "RA" || grade === "U/A") return "text-[#ffb4ab] border-[#ff516a]/40";
+  if (["RA", "U/A", "WH", "SA", "AB"].includes(grade)) return "text-[#ffb4ab] border-[#ff516a]/40";
   return "text-[#8c909f] border-[#424754]/40";
 }
 
@@ -33,6 +34,10 @@ function getGpaColor(gpa) {
 
 export default function Calculator() {
   const navigate = useNavigate();
+  const cameraInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
+  const lastSavedSignatureRef = useRef("");
+
   const [regulation, setRegulation] = useState("2021");
   const [department, setDepartment] = useState("ECE");
   const [semester, setSemester] = useState(1);
@@ -43,22 +48,31 @@ export default function Calculator() {
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
+  const [scanStage, setScanStage] = useState("");
   const [scanResults, setScanResults] = useState(null);
   const [saveStatus, setSaveStatus] = useState("");
   const [autoCalculated, setAutoCalculated] = useState(false);
-  const lastSavedSignatureRef = useRef("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [extractedData, setExtractedData] = useState(null);
+  const [extractionMeta, setExtractionMeta] = useState(null);
 
   useEffect(() => {
     const data = SYLLABUS[regulation]?.[department]?.[semester];
     if (data) {
-      setSubjects(data.map((s) => ({ ...s, grade: "" })));
+      setSubjects(data.map((subject) => ({ ...subject, grade: "" })));
     } else {
       setSubjects([]);
     }
+
     setLiveGPA(0);
+    setScanProgress(0);
+    setScanStage("");
     setScanResults(null);
     setSaveStatus("");
     setAutoCalculated(false);
+    setPreviewUrl("");
+    setExtractedData(null);
+    setExtractionMeta(null);
     lastSavedSignatureRef.current = "";
   }, [regulation, department, semester]);
 
@@ -87,7 +101,7 @@ export default function Calculator() {
       semester,
       gpa: result.gpa,
       totalCredits: result.totalCredits,
-      subjects: subjects.map(({ code, grade, credits }) => ({ code, grade, credits }))
+      subjects: subjects.map(({ code, grade, credits }) => ({ code, grade, credits })),
     });
 
     if (lastSavedSignatureRef.current === signature) {
@@ -107,10 +121,9 @@ export default function Calculator() {
         setSaveStatus("Saved to history automatically.");
       })
       .catch((err) => {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setSaveStatus(err.message);
         }
-        setSaveStatus(err.message);
       });
 
     return () => {
@@ -118,8 +131,11 @@ export default function Calculator() {
     };
   }, [subjects, regulation, department, semester]);
 
-  const GRADE_OPTIONS = ["", "O", "A+", "A", "B+", "B", "C", "RA", "U/A"];
+  const GRADE_OPTIONS = ["", "O", "A+", "A", "B+", "B", "C", "RA", "U/A", "WH", "SA", "AB"];
   const gradedSubjects = subjects.filter((subject) => subject.grade).length;
+
+  const openCamera = () => cameraInputRef.current?.click();
+  const openUpload = () => uploadInputRef.current?.click();
 
   const handleGradeChange = (index, grade) => {
     const copy = [...subjects];
@@ -127,97 +143,90 @@ export default function Calculator() {
     setSubjects(copy);
   };
 
-  async function handleScan(e) {
-    const file = e.target.files[0]
-    if (!file) return
-    e.target.value = ""
+  async function handleScan(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
 
-    setScanResults(null)
-    setAutoCalculated(false)
-
-    const { validateMarksheet, scanMarksheet, checkIfMarksheet } = 
-      await import("../utils/ocrScanner.js")
-
-    // Validate file
-    const fileCheck = await validateMarksheet(file)
-    if (!fileCheck.valid) {
-      setScanResults({
-        matched: 0,
-        unmatched: subjects.length,
-        error: fileCheck.reason
-      })
-      return
+    if (!file) {
+      setScanResults({ error: "No file selected." });
+      return;
     }
 
-    setScanning(true)
-    setScanProgress(0)
+    setScanResults(null);
+    setExtractedData(null);
+    setExtractionMeta(null);
+    setPreviewUrl("");
+    setAutoCalculated(false);
+    setScanning(true);
+    setScanProgress(0);
+    setScanStage("Preparing image");
 
     try {
-      const { matches, rawText } = await scanMarksheet(file, setScanProgress)
-      
-      // Check if it looks like a marksheet
-      const contentCheck = checkIfMarksheet(matches)
+      const { checkIfMarksheet, scanMarksheet, validateMarksheet } = await import("../utils/ocrScanner.js");
+      const fileCheck = await validateMarksheet(file);
+      if (!fileCheck.valid) {
+        setScanResults({ error: fileCheck.reason });
+        return;
+      }
+
+      const result = await scanMarksheet(file, {
+        expectedSubjects: subjects.map(({ code, name }) => ({ code, name })),
+        onProgress: ({ progress, stage }) => {
+          setScanProgress(progress);
+          setScanStage(stage || "Processing marksheet");
+        },
+      });
+
+      const contentCheck = checkIfMarksheet(result.data);
       if (!contentCheck.valid) {
-        setScanResults({
-          matched: 0,
-          unmatched: subjects.length,
-          error: contentCheck.reason
-        })
-        return
+        setScanResults({ error: contentCheck.reason });
+        return;
       }
 
-      // Apply matches to subjects
-      const copy = [...subjects]
-      let matchedCount = 0
-
-      matches.forEach(({ code, grade }) => {
-        const idx = copy.findIndex(s => 
-          s.code && s.code.trim().toUpperCase() === code.trim().toUpperCase()
-        )
-        if (idx !== -1 && grade) {
-          copy[idx] = { ...copy[idx], grade }
-          matchedCount++
-        }
-      })
-
-      setSubjects(copy)
+      const matchedPreview = matchExtractedSubjectsToSemester(result.data.subjects, subjects);
+      setPreviewUrl(result.previewUrl);
+      setExtractedData(result.data);
+      setExtractionMeta(result.meta || null);
       setScanResults({
-        matched: matchedCount,
-        unmatched: copy.length - matchedCount,
-        error: null
-      })
-
-      // Auto-calculate GPA
-      if (matchedCount > 0) {
-        const result = calculateGPA(copy)
-        setLiveGPA(result.gpa)
-        setAutoCalculated(result.isComplete)
-      }
-
+        error: null,
+        matched: matchedPreview.matchedCount,
+        unmatched: matchedPreview.unmatchedCount,
+        imported: false,
+      });
     } catch (err) {
-      console.error("Scan error:", err)
-      
-      let errorMessage = "Scan failed. Please try again."
-      
-      if (err.message?.includes("MISSING_KEY")) {
-        errorMessage = "Gemini API key not configured. Add VITE_GEMINI_API_KEY to your .env file and restart the server."
-      } else if (err.message?.includes("API_ERROR")) {
-        errorMessage = "API error: " + err.message.replace("API_ERROR: ", "")
+      let errorMessage = "Scan failed. Please try again.";
+      if (err.message?.includes("EMPTY_OCR")) {
+        errorMessage = "The image loaded, but no readable text was found. Upload a clearer screenshot.";
       } else if (err.message?.includes("NETWORK_ERROR")) {
-        errorMessage = "Cannot reach Gemini. Check your internet connection."
-      } else if (err.message?.includes("PARSE_ERROR")) {
-        errorMessage = "Could not read the response. Please try again."
+        errorMessage = "Could not reach the extraction service. Check your connection and try again.";
+      } else if (err.message?.includes("API_ERROR")) {
+        errorMessage = err.message.replace("API_ERROR: ", "");
+      } else if (err.message?.includes("INVALID_RESPONSE")) {
+        errorMessage = "The marksheet response could not be parsed into valid subjects.";
       }
-      
-      setScanResults({
-        matched: 0,
-        unmatched: subjects.length,
-        error: errorMessage
-      })
+
+      setScanResults({ error: errorMessage });
     } finally {
-      setScanning(false)
+      setScanning(false);
     }
   }
+
+  const handleImportExtracted = () => {
+    if (!extractedData?.subjects?.length) {
+      setScanResults({ error: "No extracted subjects are available to import." });
+      return;
+    }
+
+    const result = matchExtractedSubjectsToSemester(extractedData.subjects, subjects);
+    setSubjects(result.subjects);
+    setScanResults({
+      error: null,
+      matched: result.matchedCount,
+      unmatched: result.unmatchedCount,
+      imported: true,
+    });
+    setSaveStatus(result.matchedCount > 0 ? "Imported extracted grades into this semester." : "No extracted subjects matched this semester list.");
+  };
 
   const handleSave = () => {
     setScanning(false);
@@ -243,7 +252,7 @@ export default function Calculator() {
       semester,
       gpa: result.gpa,
       totalCredits: result.totalCredits,
-      subjects: subjects.map(({ code, grade, credits }) => ({ code, grade, credits }))
+      subjects: subjects.map(({ code, grade, credits }) => ({ code, grade, credits })),
     });
 
     saveSemesterResult(uid, semester, result.gpa, result.totalCredits, subjects)
@@ -264,9 +273,9 @@ export default function Calculator() {
       alert("Fill all fields");
       return;
     }
-    const sub = { ...newSubject, credits: Number(newSubject.credits) };
-    setSubjects((prev) => [...prev, { ...sub, grade: "" }]);
-    saveCrowdsourcedSubject(regulation, department, semester, sub);
+    const subject = { ...newSubject, credits: Number(newSubject.credits) };
+    setSubjects((prev) => [...prev, { ...subject, grade: "" }]);
+    saveCrowdsourcedSubject(regulation, department, semester, subject);
     setNewSubject({ code: "", name: "", credits: "", type: "theory" });
     setShowModal(false);
   };
@@ -327,103 +336,148 @@ export default function Calculator() {
               value={semester}
               onChange={(e) => setSemester(Number(e.target.value))}
             >
-              <option value={1}>1</option>
-              <option value={2}>2</option>
-              <option value={3}>3</option>
-              <option value={4}>4</option>
-              <option value={5}>5</option>
-              <option value={6}>6</option>
-              <option value={7}>7</option>
-              <option value={8}>8</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
             </select>
           </div>
         </div>
 
-        <div className="mb-6">
-          {scanResults && scanResults.error && !scanning ? (
-            <div className="bg-[#93000a]/30 border border-[#ffb4ab]/20 rounded-xl p-5">
+        <div className="mb-6 bg-[#171f33] rounded-xl p-6 glass-card border border-[#424754]/10">
+          <div className="flex justify-between items-start mb-4 gap-4">
+            <div>
+              <p className="text-sm font-bold text-[#dae2fd]">Smart Scan</p>
+              <p className="text-xs text-[#c2c6d6] mt-1">Upload your marksheet, preview it, extract subjects, then import the grades.</p>
+            </div>
+            <div className="w-10 h-10 bg-[#adc6ff]/10 rounded-xl flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[#adc6ff]">photo_camera</span>
+            </div>
+          </div>
+
+          <div className="border-t border-[#424754]/20 mb-4" />
+
+          <input ref={cameraInputRef} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="hidden" onChange={handleScan} />
+          <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleScan} />
+
+          {previewUrl ? (
+            <div className="mb-4 overflow-hidden rounded-2xl border border-[#424754]/20 bg-[#0b1326]">
+              <img src={previewUrl} alt="Selected marksheet preview" className="w-full max-h-[26rem] object-contain bg-[#0b1326]" />
+            </div>
+          ) : null}
+
+          {scanning ? (
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-8 h-8 rounded-full border-2 border-[#adc6ff] border-t-transparent animate-spin" />
+                <div>
+                  <p className="text-sm font-medium text-[#dae2fd]">Analysing marksheet...</p>
+                  <p className="text-[11px] text-[#8c909f] mt-1">{scanStage || "Processing"}</p>
+                </div>
+              </div>
+              <div className="w-full h-1 bg-[#2d3449] rounded-full">
+                <div className="h-1 bg-gradient-to-r from-[#adc6ff] to-[#64d8d8] rounded-full transition-all" style={{ width: `${scanProgress}%` }} />
+              </div>
+              <p className="text-[10px] text-[#8c909f] mt-2">{scanProgress}% complete</p>
+            </div>
+          ) : null}
+
+          {!scanning && scanResults?.error ? (
+            <div className="bg-[#93000a]/30 border border-[#ffb4ab]/20 rounded-xl p-5 mb-4">
               <div className="flex items-center gap-2 mb-3">
                 <span className="material-symbols-outlined text-[#ffb4ab]">warning</span>
                 <p className="text-sm font-semibold text-[#ffb4ab]">Unable to read marksheet</p>
               </div>
               <p className="text-xs text-[#c2c6d6] mb-4">{scanResults.error}</p>
-              <div className="border-t border-[#ffb4ab]/10 mb-3" />
-              <p className="text-xs font-bold text-[#c2c6d6] mb-2">How to get the right image:</p>
-              <div className="text-xs text-[#8c909f] leading-loose">
-                <p>? Visit coe1.annauniv.edu</p>
-                <p>? Login with your register number</p>
-                <p>? Open your semester result page</p>
-                <p>? Screenshot the full result table and upload</p>
-              </div>
               <div className="mt-4 flex gap-3">
-                <button type="button" onClick={() => document.getElementById("uploadInput").click()} className="flex-1 bg-[#ffb4ab] text-[#690005] rounded-xl py-2.5 text-xs font-bold">Try Again</button>
+                <button type="button" onClick={openUpload} className="flex-1 bg-[#ffb4ab] text-[#690005] rounded-xl py-2.5 text-xs font-bold">Try Again</button>
                 <button type="button" onClick={() => setScanResults(null)} className="flex-1 bg-[#171f33] border border-[#424754]/40 text-[#c2c6d6] rounded-xl py-2.5 text-xs">Enter Manually</button>
               </div>
             </div>
-          ) : (
-            <div className="mb-6 bg-[#171f33] rounded-xl p-6 glass-card border border-[#424754]/10">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <p className="text-sm font-bold text-[#dae2fd]">Smart Scan</p>
-                  <p className="text-xs text-[#c2c6d6] mt-1">Upload your marksheet to auto-fill all grades</p>
+          ) : null}
+
+          {!scanning && extractedData ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-[#64d8d8]/20 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="material-symbols-outlined text-[#64d8d8] text-sm">check_circle</span>
                 </div>
-                <div className="w-10 h-10 bg-[#adc6ff]/10 rounded-xl flex items-center justify-center">
-                  <span className="material-symbols-outlined text-[#adc6ff]">photo_camera</span>
+                <div>
+                  <p className="text-sm font-semibold text-[#64d8d8]">{extractedData.subjects.length} extracted entries ready to review</p>
+                  <p className="text-xs text-[#c2c6d6] mt-1">{scanResults?.matched ?? 0} of them map to the current semester list.</p>
+                  {extractionMeta?.source === "ocr-fallback" ? (
+                    <p className="text-[11px] text-[#ffcf9c] mt-1">Using OCR fallback because Gemini could not return a clean structured response.</p>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="border-t border-[#424754]/20 mb-4" />
+              {(extractedData.studentName || extractedData.registerNumber || extractedData.semester) ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                  <div className="bg-[#0b1326] border border-[#424754]/20 rounded-xl px-3 py-2">
+                    <p className="text-[#8c909f] uppercase tracking-widest">Student</p>
+                    <p className="text-[#dae2fd] mt-1 truncate">{extractedData.studentName || "Not detected"}</p>
+                  </div>
+                  <div className="bg-[#0b1326] border border-[#424754]/20 rounded-xl px-3 py-2">
+                    <p className="text-[#8c909f] uppercase tracking-widest">Register No</p>
+                    <p className="text-[#dae2fd] mt-1 truncate">{extractedData.registerNumber || "Not detected"}</p>
+                  </div>
+                  <div className="bg-[#0b1326] border border-[#424754]/20 rounded-xl px-3 py-2">
+                    <p className="text-[#8c909f] uppercase tracking-widest">Marksheet Sem</p>
+                    <p className="text-[#dae2fd] mt-1 truncate">{extractedData.semester || "Not detected"}</p>
+                  </div>
+                </div>
+              ) : null}
 
-              <input id="cameraInput" type="file" accept="image/*" capture="environment" className="hidden" onChange={handleScan} />
-              <input id="uploadInput" type="file" accept="image/*" className="hidden" onChange={handleScan} />
+              <div className="rounded-2xl border border-[#424754]/20 overflow-hidden">
+                <div className="max-h-72 overflow-auto divide-y divide-[#424754]/10 bg-[#0b1326]">
+                  {extractedData.subjects.map((subject, index) => (
+                    <div key={`${subject.code}-${subject.grade}-${index}`} className="px-4 py-3 flex justify-between items-start gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-[#dae2fd] truncate">{subject.name || "Unnamed subject"}</p>
+                        <p className="text-[10px] text-[#8c909f] mt-1">{subject.code || "No code detected"}</p>
+                      </div>
+                      <span className={`text-xs font-bold rounded-full px-2.5 py-1 border ${getGradeColor(subject.grade)}`}>{subject.grade}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-              {scanning ? (
-                <div>
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-8 h-8 rounded-full border-2 border-[#adc6ff] border-t-transparent animate-spin" />
-                    <p className="text-sm font-medium text-[#dae2fd]">Analysing marksheet...</p>
-                  </div>
-                  <div className="w-full h-1 bg-[#2d3449] rounded-full">
-                    <div className="h-1 bg-gradient-to-r from-[#adc6ff] to-[#64d8d8] rounded-full transition-all" style={{ width: scanProgress + "%" }} />
-                  </div>
-                  <p className="text-[10px] text-[#8c909f] mt-2">{scanProgress}% complete</p>
-                </div>
-              ) : scanResults && !scanResults.error ? (
-                <div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-[#64d8d8]/20 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-[#64d8d8] text-sm">check_circle</span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-[#64d8d8]">{scanResults.matched} grades filled automatically</p>
-                      <p className="text-xs text-[#c2c6d6] mt-1">{scanResults.unmatched} subjects need manual entry</p>
-                      {autoCalculated ? <p className="text-xs text-[#adc6ff] mt-1 font-medium">GPA calculated and saved to your history.</p> : null}
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => setScanResults(null)} className="text-[10px] text-[#8c909f] mt-3 underline">Scan again</button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => document.getElementById("cameraInput").click()}
-                    className="flex items-center justify-center gap-2 bg-[#adc6ff] text-[#002e6a] rounded-xl py-3 text-xs font-bold hover:bg-[#c5d8ff] active:scale-95 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-sm">photo_camera</span>
-                    Open Camera
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => document.getElementById("uploadInput").click()}
-                    className="flex items-center justify-center gap-2 bg-[#171f33] border border-[#424754]/40 text-[#c2c6d6] rounded-xl py-3 text-xs font-semibold hover:border-[#adc6ff]/40 hover:text-[#adc6ff]"
-                  >
-                    <span className="material-symbols-outlined text-sm">upload</span>
-                    Upload Photo
-                  </button>
-                </div>
-              )}
+              <div className="grid grid-cols-2 gap-3">
+                <button type="button" onClick={handleImportExtracted} className="flex items-center justify-center gap-2 bg-[#adc6ff] text-[#002e6a] rounded-xl py-3 text-xs font-bold hover:bg-[#c5d8ff]">
+                  <span className="material-symbols-outlined text-sm">download</span>
+                  Import Grades
+                </button>
+                <button type="button" onClick={openUpload} className="flex items-center justify-center gap-2 bg-[#171f33] border border-[#424754]/40 text-[#c2c6d6] rounded-xl py-3 text-xs font-semibold hover:border-[#adc6ff]/40 hover:text-[#adc6ff]">
+                  <span className="material-symbols-outlined text-sm">upload</span>
+                  Scan Again
+                </button>
+              </div>
+
+              {scanResults?.imported ? (
+                <p className="text-[11px] text-[#64d8d8]">Imported {scanResults.matched} grades. {scanResults.unmatched} subjects still need manual entry.</p>
+              ) : null}
             </div>
-          )}
+          ) : null}
+
+          {!scanning && !extractedData ? (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={openCamera}
+                className="flex items-center justify-center gap-2 bg-[#adc6ff] text-[#002e6a] rounded-xl py-3 text-xs font-bold hover:bg-[#c5d8ff] active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-sm">photo_camera</span>
+                Open Camera
+              </button>
+              <button
+                type="button"
+                onClick={openUpload}
+                className="flex items-center justify-center gap-2 bg-[#171f33] border border-[#424754]/40 text-[#c2c6d6] rounded-xl py-3 text-xs font-semibold hover:border-[#adc6ff]/40 hover:text-[#adc6ff]"
+              >
+                <span className="material-symbols-outlined text-sm">upload</span>
+                Upload Photo
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="mb-6">
@@ -497,7 +551,7 @@ export default function Calculator() {
             {saving ? "Saving..." : "Save to History"}
           </button>
           <p className="text-center text-[11px] text-[#8c909f]">
-            {saveStatus || "Completed GPA calculations are saved to history automatically."}
+            {saveStatus || (autoCalculated ? "Completed GPA calculations are saved automatically." : "Completed GPA calculations are saved to history automatically.")}
           </p>
         </div>
       </div>

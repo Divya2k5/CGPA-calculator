@@ -16,7 +16,7 @@ function requireDb() {
   return db;
 }
 
-export async function saveSemesterResult(uid, semNum, gpa, totalCredits, subjects) {
+export async function saveSemesterResult(uid, semNum, gpa, totalCredits, subjects, metadata = {}) {
   const ref = doc(requireDb(), "users", uid, "semesters", "sem_" + semNum);
   await setDoc(
     ref,
@@ -25,6 +25,9 @@ export async function saveSemesterResult(uid, semNum, gpa, totalCredits, subject
       gpa: gpa,
       totalCredits: totalCredits,
       subjects: subjects,
+      department: metadata.department || null,
+      departmentLabel: metadata.departmentLabel || null,
+      regulation: metadata.regulation || null,
       savedAt: serverTimestamp()
     },
     { merge: true }

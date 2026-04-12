@@ -1,130 +1,212 @@
-export async function scanMarksheet(imageFile, onProgress) {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
+import { createWorker } from "tesseract.js";
+import {
+  extractSubjectsFromText,
+  looksLikeMarksheet,
+  normalizeMarksheetData,
+} from "./marksheetParsing.js";
 
-  if (!apiKey || apiKey.length < 10) {
-    throw new Error("MISSING_KEY: Add VITE_OPENAI_API_KEY to .env and restart")
+const ACCEPTED_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
+const MAX_DIMENSION = 2200;
+const JPEG_QUALITY = 0.9;
+
+function normalizeMimeType(type) {
+  const normalized = String(type || "").toLowerCase().trim();
+  if (normalized === "image/jpg") return "image/jpeg";
+  if (["image/jpeg", "image/png"].includes(normalized)) {
+    return normalized;
+  }
+  return "image/jpeg";
+}
+
+function emitProgress(onProgress, progress, stage) {
+  if (typeof onProgress === "function") {
+    onProgress({ progress, stage });
+  }
+}
+
+function fileMatchesAllowedType(file) {
+  if (!file) return false;
+  if (ACCEPTED_TYPES.includes(file.type)) return true;
+
+  const name = String(file.name || "").toLowerCase();
+  return [".jpg", ".jpeg", ".png", ".webp"].some((ext) => name.endsWith(ext));
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read the selected image."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image preview could not be generated."));
+    image.src = dataUrl;
+  });
+}
+
+function dataUrlToBase64(dataUrl) {
+  return String(dataUrl || "")
+    .replace(/^data:[^;]+;base64,/i, "")
+    .replace(/\s+/g, "");
+}
+
+async function preprocessImage(file) {
+  const originalDataUrl = await readFileAsDataUrl(file);
+  const image = await loadImage(originalDataUrl);
+  const largestSide = Math.max(image.width, image.height);
+  const targetMimeType = normalizeMimeType(file.type);
+  const shouldResize =
+    largestSide > MAX_DIMENSION ||
+    file.size > 4 * 1024 * 1024 ||
+    targetMimeType !== String(file.type || "").toLowerCase().trim();
+
+  if (!shouldResize) {
+    return {
+      dataUrl: originalDataUrl,
+      mimeType: targetMimeType,
+    };
   }
 
-  onProgress(20)
+  const scale = Math.min(1, MAX_DIMENSION / largestSide);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
 
-  const base64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result.split(",")[1])
-    reader.onerror = () => reject(new Error("Could not read file"))
-    reader.readAsDataURL(imageFile)
-  })
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return {
+      dataUrl: originalDataUrl,
+      mimeType: targetMimeType,
+    };
+  }
 
-  onProgress(50)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return {
+    dataUrl: canvas.toDataURL("image/jpeg", JPEG_QUALITY),
+    mimeType: "image/jpeg",
+  };
+}
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
+async function runTesseractOCR(imageSource, onProgress) {
+  const worker = await createWorker("eng", 1, {
+    logger: (message) => {
+      if (message.status === "recognizing text") {
+        emitProgress(onProgress, 15 + Math.round((message.progress || 0) * 45), "Reading text from the marksheet");
+      }
     },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `This is an Anna University student marksheet or result page.
-Extract every subject code and grade from the result table.
+  });
 
-Subject codes look like: EC3151, MA3151, GE3151, CS3301
-Valid grades only: O, A+, A, B+, B, C, RA, U/A, WH, SA, AB
-
-Return ONLY a raw JSON array, no markdown, no explanation:
-[{"code":"EC3151","grade":"O"},{"code":"MA3151","grade":"A+"}]
-
-If this is not a marksheet return exactly: []`
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${imageFile.type || "image/jpeg"};base64,${base64}`,
-                detail: "high"
-              }
-            }
-          ]
-        }
-      ]
-    })
-  })
-
-  onProgress(80)
-
-  const raw = await response.text()
-  console.log("OpenAI status:", response.status)
-  console.log("OpenAI response:", raw)
-
-  if (!response.ok) {
-    let msg = "OpenAI API error " + response.status
-    try {
-      const j = JSON.parse(raw)
-      msg = j.error?.message || msg
-    } catch {}
-    throw new Error("API_ERROR: " + msg)
-  }
-
-  const data = JSON.parse(raw)
-  const text = data.choices?.[0]?.message?.content || "[]"
-  console.log("GPT-4o mini output:", text)
-
-  let matches = []
   try {
-    const clean = text.replace(/```json/gi,"").replace(/```/g,"").trim()
-    matches = JSON.parse(clean)
-    if (!Array.isArray(matches)) matches = []
-  } catch {
-    console.error("Parse failed:", text)
-    matches = []
+    emitProgress(onProgress, 15, "Starting OCR");
+    const { data } = await worker.recognize(imageSource);
+    return String(data?.text || "").trim();
+  } finally {
+    await worker.terminate();
   }
-
-  onProgress(100)
-  console.log("Final matches:", matches)
-  return { matches, rawText: text }
 }
 
 export async function validateMarksheet(imageFile) {
   if (!imageFile) {
-    return { valid: false, reason: "No file selected." }
+    return { valid: false, reason: "No file selected." };
   }
-  
-  const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"]
-  if (!validTypes.includes(imageFile.type) && !imageFile.type.startsWith("image/")) {
-    return { 
-      valid: false, 
-      reason: "Please upload an image file. JPG, PNG or screenshot only." 
-    }
+
+  if (!fileMatchesAllowedType(imageFile)) {
+    return {
+      valid: false,
+      reason: "Unsupported image format. Upload a JPG, JPEG, PNG, WEBP, or screenshot image.",
+    };
   }
 
   if (imageFile.size < 5000) {
-    return { 
-      valid: false, 
-      reason: "Image too small. Please upload a full-size screenshot." 
-    }
-  }
-
-  if (imageFile.size > 25000000) {
-    return { 
-      valid: false, 
-      reason: "Image too large (max 25MB). Please compress it first." 
-    }
-  }
-
-  return { valid: true, reason: null }
-}
-
-export function checkIfMarksheet(matches) {
-  if (!Array.isArray(matches) || matches.length === 0) {
     return {
       valid: false,
-      reason: "This image does not appear to be an Anna University marksheet. Please upload your official result screenshot from coe1.annauniv.edu or your college portal."
-    }
+      reason: "Image too small. Upload a full screenshot or a clearer marksheet photo.",
+    };
   }
-  return { valid: true, reason: null }
+
+  if (imageFile.size > MAX_FILE_SIZE) {
+    return {
+      valid: false,
+      reason: "Image too large. Upload an image smaller than 12 MB.",
+    };
+  }
+
+  return { valid: true, reason: null };
+}
+
+export function checkIfMarksheet(data) {
+  if (!looksLikeMarksheet(data)) {
+    return {
+      valid: false,
+      reason: "No valid subjects were detected from this image. Upload a clearer result screenshot with the full subject table visible.",
+    };
+  }
+
+  return { valid: true, reason: null };
+}
+
+export async function scanMarksheet(imageFile, options = {}) {
+  const { onProgress, expectedSubjects = [] } = options;
+
+  emitProgress(onProgress, 5, "Preparing image");
+  const prepared = await preprocessImage(imageFile);
+  const previewUrl = prepared.dataUrl;
+
+  const ocrText = await runTesseractOCR(prepared.dataUrl, onProgress);
+  if (!ocrText) {
+    throw new Error("EMPTY_OCR: No readable text was found in the image.");
+  }
+
+  emitProgress(onProgress, 70, "Structuring the OCR result");
+
+  let response;
+  const imageBase64 = dataUrlToBase64(prepared.dataUrl);
+  try {
+    response = await fetch("/api/extract", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        imageBase64,
+        mimeType: normalizeMimeType(prepared.mimeType),
+        ocrText,
+        expectedSubjects,
+      }),
+    });
+  } catch {
+    throw new Error("NETWORK_ERROR: Could not reach the extraction service.");
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`API_ERROR: ${payload?.error || payload?.details || "Extraction request failed."}`);
+  }
+
+  const responseData = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+  const data = normalizeMarksheetData(responseData, expectedSubjects);
+  const fallbackSubjects = extractSubjectsFromText(ocrText, expectedSubjects);
+  const finalData = looksLikeMarksheet(data)
+    ? data
+    : normalizeMarksheetData({ subjects: fallbackSubjects }, expectedSubjects);
+
+  if (!looksLikeMarksheet(finalData)) {
+    throw new Error("INVALID_RESPONSE: No valid subjects were extracted.");
+  }
+
+  emitProgress(onProgress, 100, "Extraction complete");
+
+  return {
+    data: finalData,
+    ocrText,
+    previewUrl,
+    meta: payload?.meta || { source: "ocr-fallback" },
+  };
 }
