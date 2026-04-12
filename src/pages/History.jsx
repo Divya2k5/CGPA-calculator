@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { auth } from "../firebase/config.js"
 import { getAllSemesters } from "../firebase/firestore.js"
@@ -15,7 +15,7 @@ function getGpaColorClass(value) {
 function getGradeBadgeClass(grade) {
   if (grade === "O" || grade === "A+") return "bg-[#64d8d8]/10 text-[#64d8d8]"
   if (grade === "A" || grade === "B+") return "bg-[#adc6ff]/10 text-[#adc6ff]"
-  if (grade === "B" || grade === "C") return "bg-yellow-500/10 text-yellow-400"
+  if (grade === "B" || grade === "C") return "bg-[#f9c97f]/12 text-[#f9c97f]"
   return "bg-[#ffb4ab]/10 text-[#ffb4ab]"
 }
 
@@ -42,86 +42,112 @@ export default function History() {
       .catch(() => setLoading(false))
   }, [navigate])
 
+  const latestSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null
+
   if (loading) {
     return (
-      <div className="bg-[#0b1326] min-h-screen flex flex-col items-center justify-center gap-4">
-        <div className="w-16 h-16 bg-[#222a3d] rounded-2xl flex items-center justify-center border border-[#adc6ff]/20">
-          <span className="material-symbols-outlined text-[#adc6ff] text-3xl">school</span>
+      <div className="app-shell app-shell--centered">
+        <div className="loading-mark">
+          <span className="material-symbols-outlined text-[32px] text-[#adc6ff]">school</span>
         </div>
         <div className="w-8 h-8 rounded-full border-2 border-[#adc6ff] border-t-transparent animate-spin" />
-        <p className="text-[#8c909f] text-sm">Loading...</p>
+        <p className="text-sm text-[#8c909f]">Loading your academic record...</p>
       </div>
     )
   }
 
   return (
-    <div className="bg-[#0b1326] min-h-screen text-[#dae2fd] pb-28">
-      <div className="bg-slate-900/80 backdrop-blur-xl px-6 py-4 flex items-center gap-3 sticky top-0 z-50">
-        <div className="max-w-2xl mx-auto w-full flex items-center gap-3">
-          <span className="material-symbols-outlined text-[#adc6ff]">history</span>
-          <h1 className="text-lg font-bold text-blue-200">Academic History</h1>
-        </div>
-      </div>
-
-      <div className="px-6 pt-6 max-w-2xl mx-auto">
-        <div className="bg-[#171f33] rounded-2xl p-6 mb-6 border border-[#424754]/20 glass-card">
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-[10px] uppercase tracking-widest text-[#8c909f] mb-1">Overall CGPA</p>
-              <p className={`text-5xl font-black ${getGpaColorClass(cgpa)}`}>{cgpa.toFixed(2)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-widest text-[#8c909f] mb-1">Semesters</p>
-              <p className="text-5xl font-black text-[#adc6ff]">{semesters.length}</p>
-            </div>
+    <div className="app-shell">
+      <header className="app-topbar">
+        <div className="app-topbar__inner">
+          <div>
+            <p className="eyebrow">Home</p>
+            <h1 className="page-title">Academic overview</h1>
           </div>
         </div>
+      </header>
 
-        {semesters.length === 0 ? (
-          <div className="py-20 text-center">
-            <span className="material-symbols-outlined text-[#424754] text-6xl">history</span>
-            <p className="text-[#8c909f] text-sm mt-4">No history yet</p>
-            <p className="text-[#424754] text-xs mt-1">Save your first semester to see it here</p>
-            <button
-              type="button"
-              onClick={() => navigate("/calculator")}
-              className="mt-6 bg-[#adc6ff] text-[#002e6a] px-6 py-3 rounded-xl text-sm font-bold"
-            >
-              Calculate First Semester
+      <main className="app-content space-y-5">
+        <section className="section-card section-card--hero">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Overall CGPA</p>
+              <p className={`mt-2 text-5xl font-black tracking-tight ${getGpaColorClass(cgpa)}`}>{cgpa.toFixed(2)}</p>
+              <p className="mt-3 text-sm text-[#a8b1c7]">
+                {latestSemester
+                  ? `Latest saved semester: ${latestSemester.semNum}`
+                  : "No saved semesters yet. Start with your first GPA calculation."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-[#8c909f]">Saved</p>
+              <p className="mt-1 text-2xl font-bold text-[#dae2fd]">{semesters.length}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button type="button" onClick={() => navigate("/calculator")} className="primary-button">
+              Open Calculator
+            </button>
+            <button type="button" onClick={() => navigate("/profile")} className="secondary-button">
+              View Profile
             </button>
           </div>
+        </section>
+
+        {semesters.length === 0 ? (
+          <section className="section-card py-12 text-center">
+            <span className="material-symbols-outlined text-5xl text-[#31394d]">history</span>
+            <h2 className="mt-4 text-lg font-semibold text-[#dae2fd]">No semesters saved yet</h2>
+            <p className="mt-2 text-sm text-[#8c909f]">Your semester results will appear here once you save a completed calculation.</p>
+          </section>
         ) : (
-          <div className="space-y-3">
-            <p className="text-[10px] uppercase tracking-widest text-[#8c909f] font-bold mb-3">Semester Breakdown</p>
+          <section className="space-y-3">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">History</p>
+                <h2 className="section-title">Saved semesters</h2>
+              </div>
+            </div>
+
             {semesters.map((semester) => (
-              <div key={semester.semNum} className="bg-[#171f33] rounded-2xl p-5 border border-[#424754]/10 flex flex-col gap-4">
-                <div className="flex justify-between items-start gap-4">
+              <article key={semester.semNum} className="section-card space-y-4">
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <span className="bg-[#adc6ff]/10 text-[#adc6ff] text-[10px] font-bold px-3 py-1 rounded-full">SEMESTER {semester.semNum}</span>
-                    <p className={`text-2xl font-black mt-2 ${getGpaColorClass(Number(semester.gpa) || 0)}`}>{Number(semester.gpa || 0).toFixed(2)}</p>
-                    <p className="text-xs text-[#8c909f] mt-1">{semester.totalCredits || 0} credits</p>
+                    <p className="eyebrow">Semester {semester.semNum}</p>
+                    <p className={`mt-2 text-3xl font-black tracking-tight ${getGpaColorClass(Number(semester.gpa) || 0)}`}>
+                      {Number(semester.gpa || 0).toFixed(2)}
+                    </p>
+                    <p className="mt-1 text-xs text-[#8c909f]">
+                      {semester.totalCredits || 0} credits
+                      {semester.departmentLabel ? ` - ${semester.departmentLabel}` : ""}
+                    </p>
                   </div>
-                  <span className="bg-[#64d8d8]/10 text-[#64d8d8] text-xs font-bold px-3 py-1.5 rounded-full">PASSED</span>
+                  <span className="rounded-full bg-[#adc6ff]/10 px-3 py-1 text-[11px] font-semibold text-[#adc6ff]">
+                    {semester.subjects?.length || 0} subjects
+                  </span>
                 </div>
 
                 {semester.subjects && semester.subjects.length > 0 ? (
-                  <div className="border-t border-[#424754]/20 pt-3">
-                    <p className="text-[10px] uppercase tracking-widest text-[#8c909f] mb-2">Subjects</p>
-                    <div className="grid grid-cols-1 gap-1.5">
-                      {semester.subjects.map((subject, index) => (
-                        <div key={`${semester.semNum}-${subject.code || subject.name}-${index}`} className="flex justify-between items-center py-1 gap-3">
-                          <p className="text-xs text-[#c2c6d6] truncate">{subject.name}</p>
-                          <span className={`text-xs font-bold rounded-full px-2 py-0.5 ${getGradeBadgeClass(subject.grade)}`}>{subject.grade}</span>
+                  <div className="space-y-2 border-t border-white/5 pt-4">
+                    {semester.subjects.map((subject, index) => (
+                      <div key={`${semester.semNum}-${subject.code || subject.name}-${index}`} className="flex items-center justify-between gap-3 rounded-2xl bg-[#0e1629] px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-[#dae2fd]">{subject.name}</p>
+                          <p className="mt-1 text-[11px] text-[#7f8aa3]">{subject.code || "Subject"}</p>
                         </div>
-                      ))}
-                    </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getGradeBadgeClass(subject.grade)}`}>
+                          {subject.grade}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
-              </div>
+              </article>
             ))}
-          </div>
+          </section>
         )}
-      </div>
+      </main>
 
       <BottomNav />
     </div>

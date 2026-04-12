@@ -20,17 +20,17 @@ const GPA_LIMITS = { min: 0, max: 10 };
 const DEFAULT_MANUAL_CGPA_SEMESTERS = 8;
 
 function getGradeColor(grade) {
-  if (grade === "O" || grade === "A+") return "text-[#64d8d8] border-[#64d8d8]/40";
-  if (grade === "A" || grade === "B+") return "text-[#adc6ff] border-[#adc6ff]/40";
-  if (grade === "B" || grade === "C") return "text-[#ffb2b7] border-[#ffb2b7]/40";
-  if (["RA", "U/A", "WH", "SA", "AB"].includes(grade)) return "text-[#ffb4ab] border-[#ff516a]/40";
-  return "text-[#8c909f] border-[#424754]/40";
+  if (grade === "O" || grade === "A+") return "text-[#64d8d8] border-[#64d8d8]/25";
+  if (grade === "A" || grade === "B+") return "text-[#adc6ff] border-[#adc6ff]/25";
+  if (grade === "B" || grade === "C") return "text-[#f9c97f] border-[#f9c97f]/25";
+  if (["RA", "U/A", "WH", "SA", "AB"].includes(grade)) return "text-[#ffb4ab] border-[#ffb4ab]/25";
+  return "text-[#8c909f] border-white/10";
 }
 
 function getGpaColor(gpa) {
   if (gpa >= 8.5) return "text-[#64d8d8]";
   if (gpa >= 6.5) return "text-[#adc6ff]";
-  if (gpa > 0) return "text-[#ffb2b7]";
+  if (gpa > 0) return "text-[#ffb4ab]";
   return "text-[#8c909f]";
 }
 
@@ -139,7 +139,7 @@ export default function CalculatorPage() {
         }
         setLastSavedSignature(signature);
         setAutoCalculated(true);
-        setSaveStatus("Saved to history automatically.");
+        setSaveStatus("Saved automatically.");
       })
       .catch((err) => {
         if (!cancelled) {
@@ -161,9 +161,9 @@ export default function CalculatorPage() {
   }, [manualSemesterCount]);
 
   const handleGradeChange = (index, grade) => {
-    const copy = [...subjects];
-    copy[index] = { ...copy[index], grade };
-    setSubjects(copy);
+    const nextSubjects = [...subjects];
+    nextSubjects[index] = { ...nextSubjects[index], grade };
+    setSubjects(nextSubjects);
   };
 
   const handleManualGpaChange = (index, value) => {
@@ -179,15 +179,11 @@ export default function CalculatorPage() {
   const handleManualCgpaCalculate = () => {
     const nextErrors = manualSemesterGpas.map((value) => {
       const trimmed = value.trim();
-      if (!trimmed) {
-        return "Enter GPA";
-      }
+
+      if (!trimmed) return "Enter GPA";
 
       const parsed = Number(trimmed);
-      if (!Number.isFinite(parsed)) {
-        return "Enter a valid number";
-      }
-
+      if (!Number.isFinite(parsed)) return "Enter a valid number";
       if (parsed < GPA_LIMITS.min || parsed > GPA_LIMITS.max) {
         return `Use ${GPA_LIMITS.min.toFixed(2)} to ${GPA_LIMITS.max.toFixed(2)}`;
       }
@@ -202,8 +198,7 @@ export default function CalculatorPage() {
       return;
     }
 
-    const result = calculateManualCGPA(manualSemesterGpas.map((value) => Number(value)));
-    setManualCgpa(result);
+    setManualCgpa(calculateManualCGPA(manualSemesterGpas.map((value) => Number(value))));
   };
 
   const handleSave = () => {
@@ -265,143 +260,134 @@ export default function CalculatorPage() {
   const subjectSectionHeading = departmentConfig?.label || department;
 
   return (
-    <div className="bg-[#0b1326] min-h-screen text-[#dae2fd] pb-[18rem]">
-      <div className="fixed top-0 w-full z-50 bg-slate-900/80 backdrop-blur-xl shadow-2xl">
-        <div className="flex items-center justify-between px-6 h-16 max-w-2xl mx-auto w-full">
-          <div className="flex items-center">
-            <button type="button" onClick={() => navigate("/dashboard")} className="p-2 text-blue-200 hover:bg-white/10 rounded-full">
-              <span className="material-symbols-outlined">arrow_back</span>
-            </button>
-            <span className="text-lg font-bold text-blue-200 ml-2">GRADE CALCULATOR</span>
+    <div className="app-shell">
+      <header className="app-topbar">
+        <div className="app-topbar__inner">
+          <button type="button" onClick={() => navigate("/")} className="icon-button">
+            <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="eyebrow">Calculator</p>
+            <h1 className="page-title">{calculatorMode === "gpa" ? "Semester GPA" : "Manual CGPA"}</h1>
           </div>
-          <span className="bg-[#adc6ff]/20 text-[#adc6ff] text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">
-            {calculatorMode === "gpa" ? `SEM ${semester}` : "CGPA"}
-          </span>
+          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-[#adc6ff]">
+            {calculatorMode === "gpa" ? `Sem ${semester}` : `${manualSemesterCount} sems`}
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div className="pt-24 px-6 max-w-2xl mx-auto">
-        <div className="mb-6 bg-[#171f33] rounded-xl p-2 border border-[#424754]/10 inline-flex gap-2">
-          {CALCULATOR_MODES.map((mode) => {
-            const active = calculatorMode === mode.value;
-            return (
-              <button
-                key={mode.value}
-                type="button"
-                onClick={() => setCalculatorMode(mode.value)}
-                className={active
-                  ? "px-4 py-2 rounded-xl text-sm font-semibold bg-[#adc6ff] text-[#002e6a]"
-                  : "px-4 py-2 rounded-xl text-sm font-semibold text-[#c2c6d6] hover:text-[#adc6ff]"}
-              >
-                {mode.label}
-              </button>
-            );
-          })}
-        </div>
+      <main className="app-content space-y-5 pb-44">
+        <section className="section-card">
+          <div className="segmented-control">
+            {CALCULATOR_MODES.map((mode) => {
+              const active = calculatorMode === mode.value;
+              return (
+                <button
+                  key={mode.value}
+                  type="button"
+                  onClick={() => setCalculatorMode(mode.value)}
+                  className={active ? "segmented-control__item segmented-control__item--active" : "segmented-control__item"}
+                >
+                  {mode.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
         {calculatorMode === "gpa" ? (
           <>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 mb-6">
-              <div>
-                <p className="text-[10px] uppercase tracking-widest text-[#c2c6d6] mb-2">Regulation</p>
-                <select
-                  className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm focus:outline-none focus:ring-2 focus:ring-[#adc6ff]/50 focus:border-[#adc6ff]"
-                  value={regulation}
-                  onChange={(event) => setRegulation(event.target.value)}
-                >
-                  <option value="2021">2021</option>
-                  <option value="2017">2017</option>
-                </select>
-              </div>
-
-              <div className="md:col-span-2">
-                <p className="text-[10px] uppercase tracking-widest text-[#c2c6d6] mb-2">Department</p>
-                <select
-                  className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm focus:outline-none focus:ring-2 focus:ring-[#adc6ff]/50 focus:border-[#adc6ff]"
-                  value={department}
-                  onChange={(event) => setDepartment(event.target.value)}
-                >
-                  {departmentOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <p className="text-[10px] uppercase tracking-widest text-[#c2c6d6] mb-2">Semester</p>
-                <select
-                  className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm focus:outline-none focus:ring-2 focus:ring-[#adc6ff]/50 focus:border-[#adc6ff]"
-                  value={semester}
-                  onChange={(event) => setSemester(Number(event.target.value))}
-                >
-                  {semesterOptions.map((value) => (
-                    <option key={value} value={value}>{value}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="md:col-span-2 bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3">
-                <p className="text-[10px] uppercase tracking-widest text-[#8c909f] mb-1">Current Selection</p>
-                <p className="text-sm font-semibold text-[#dae2fd]">{subjectSectionHeading}</p>
-                <p className="text-xs text-[#c2c6d6] mt-1">
-                  {departmentConfig?.hasBundledSubjects
-                    ? "Bundled semester subject lists are available for this department."
-                    : "Department and semester selection are available, but bundled subject lists are not added for this department yet."}
-                </p>
-              </div>
-            </div>
-
-            <div className="mb-6 bg-[#171f33] rounded-xl p-6 glass-card border border-[#424754]/10">
-              {/* Smart Scan stays disabled until OCR/Gemini extraction is fixed. */}
-              <div className="flex justify-between items-start mb-4 gap-4">
+            <section className="section-card space-y-4">
+              <div className="section-heading">
                 <div>
-                  <p className="text-sm font-bold text-[#dae2fd]">Smart Scan Unavailable</p>
-                  <p className="text-xs text-[#c2c6d6] mt-1">
-                    Image upload, camera capture, OCR, and Gemini extraction are temporarily disabled so users cannot trigger the broken extraction flow.
+                  <p className="eyebrow">Setup</p>
+                  <h2 className="section-title">Choose your semester</h2>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="input-group">
+                  <span className="input-label">Regulation</span>
+                  <select className="input-field" value={regulation} onChange={(event) => setRegulation(event.target.value)}>
+                    <option value="2021">2021</option>
+                    <option value="2017">2017</option>
+                  </select>
+                </label>
+
+                <label className="input-group sm:col-span-2">
+                  <span className="input-label">Department</span>
+                  <select className="input-field" value={department} onChange={(event) => setDepartment(event.target.value)}>
+                    {departmentOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="input-group">
+                  <span className="input-label">Semester</span>
+                  <select className="input-field" value={semester} onChange={(event) => setSemester(Number(event.target.value))}>
+                    {semesterOptions.map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="info-panel">
+                  <p className="input-label">Subjects</p>
+                  <p className="mt-2 text-sm font-medium text-[#dae2fd]">{subjectSectionHeading}</p>
+                  <p className="mt-1 text-xs text-[#8c909f]">
+                    {departmentConfig?.hasBundledSubjects
+                      ? "Bundled semester subjects are ready for this department."
+                      : "This department is selectable, but bundled subjects have not been added yet."}
                   </p>
                 </div>
-                <div className="w-10 h-10 bg-[#ffb4ab]/10 rounded-xl flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[#ffb4ab]">visibility_off</span>
-                </div>
               </div>
-              <div className="border-t border-[#424754]/20 mb-4" />
-              <p className="text-[11px] text-[#8c909f]">
-                The OCR and extraction files remain in the repo for later restoration, but all related UI triggers are intentionally hidden from this page.
-              </p>
-            </div>
+            </section>
 
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#c2c6d6]">Core Subjects ({subjectSectionHeading})</p>
-                <button type="button" onClick={() => setSubjects(subjects.map((subject) => ({ ...subject, grade: "" })))} className="text-[10px] text-[#8c909f] hover:text-[#adc6ff]">CLEAR ALL</button>
+            <section className="section-card border-[#ffb4ab]/10 bg-[#181823]">
+              <p className="eyebrow">Smart Scan</p>
+              <p className="mt-2 text-sm font-semibold text-[#f3f6ff]">Temporarily unavailable</p>
+              <p className="mt-2 text-sm leading-6 text-[#8c909f]">
+                Image upload, OCR, Gemini extraction, and Smart Scan entry points remain hidden until the extraction flow is fixed.
+              </p>
+            </section>
+
+            <section className="section-card space-y-4">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Entry</p>
+                  <h2 className="section-title">Subject grades</h2>
+                </div>
+                {subjects.length > 0 ? (
+                  <button type="button" onClick={() => setSubjects(subjects.map((subject) => ({ ...subject, grade: "" })))} className="text-sm font-medium text-[#8c909f]">
+                    Clear all
+                  </button>
+                ) : null}
               </div>
 
               {subjects.length === 0 ? (
-                <div className="py-16 text-center bg-[#171f33] rounded-xl border border-[#424754]/10">
-                  <span className="material-symbols-outlined text-[#424754] text-5xl mb-3">school</span>
-                  <p className="text-[#8c909f] text-sm">No bundled subjects found</p>
-                  <p className="text-[#424754] text-xs mt-1">
-                    {departmentConfig?.hasBundledSubjects
-                      ? "Try a different semester."
-                      : "Use Add manually below until this department's subject list is added."}
+                <div className="rounded-3xl border border-dashed border-white/10 bg-[#0e1629] px-5 py-10 text-center">
+                  <span className="material-symbols-outlined text-5xl text-[#31394d]">school</span>
+                  <p className="mt-4 text-sm text-[#8c909f]">
+                    {departmentConfig?.hasBundledSubjects ? "No subjects found for this semester." : "Add subjects manually for this department."}
                   </p>
                 </div>
               ) : (
-                <div>
+                <div className="space-y-3">
                   {subjects.map((subject, index) => (
-                    <div key={`${subject.code}-${index}`} className="bg-[#171f33] rounded-xl px-5 py-4 mb-2 flex justify-between items-center border border-[#424754]/10 gap-4">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#dae2fd]">{subject.name}</p>
-                        <p className="text-[10px] text-[#8c909f] mt-0.5">{subject.code} - {subject.credits} credits</p>
+                    <div key={`${subject.code}-${index}`} className="rounded-3xl border border-white/5 bg-[#0e1629] p-4">
+                      <div className="mb-3">
+                        <p className="text-sm font-semibold leading-6 text-[#f3f6ff]">{subject.name}</p>
+                        <p className="mt-1 text-[11px] text-[#7f8aa3]">{subject.code} - {subject.credits} credits</p>
                       </div>
                       <select
                         value={subject.grade}
                         onChange={(event) => handleGradeChange(index, event.target.value)}
-                        className={`bg-[#0b1326] border rounded-xl px-3 py-2 text-sm font-bold min-w-[90px] focus:outline-none focus:ring-2 focus:ring-[#adc6ff]/50 ${getGradeColor(subject.grade)}`}
+                        className={`input-field !py-3 font-semibold ${getGradeColor(subject.grade)}`}
                       >
                         {GRADE_OPTIONS.map((option) => (
                           <option key={option || "empty"} value={option}>
-                            {option || "Grade"}
+                            {option || "Select grade"}
                           </option>
                         ))}
                       </select>
@@ -409,51 +395,36 @@ export default function CalculatorPage() {
                   ))}
                 </div>
               )}
-            </div>
 
-            <div className="mb-6">
-              <button
-                type="button"
-                className="w-full border border-dashed border-[#424754]/40 rounded-xl py-4 flex items-center justify-center gap-2 hover:border-[#adc6ff]/40 hover:text-[#adc6ff] transition-all text-[#8c909f] text-xs font-medium"
-                onClick={() => setShowModal(true)}
-              >
-                <span className="material-symbols-outlined text-sm">add_circle</span>
-                Subject not listed? Add manually
+              <button type="button" className="secondary-button justify-center" onClick={() => setShowModal(true)}>
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                Add Missing Subject
               </button>
-            </div>
+            </section>
           </>
         ) : (
-          <div className="space-y-6">
-            <div className="bg-[#171f33] rounded-xl p-6 border border-[#424754]/10">
-              <div className="flex items-start justify-between gap-4 mb-4">
+          <>
+            <section className="section-card space-y-4">
+              <div className="section-heading">
                 <div>
-                  <p className="text-sm font-bold text-[#dae2fd]">Manual CGPA Calculator</p>
-                  <p className="text-xs text-[#c2c6d6] mt-1">Choose how many semesters to include, enter each GPA, and calculate the overall CGPA.</p>
-                </div>
-                <div className="w-10 h-10 bg-[#adc6ff]/10 rounded-xl flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[#adc6ff]">calculate</span>
+                  <p className="eyebrow">Setup</p>
+                  <h2 className="section-title">Manual CGPA</h2>
                 </div>
               </div>
 
-              <div className="mb-5">
-                <p className="text-[10px] uppercase tracking-widest text-[#c2c6d6] mb-2">Number of Semesters</p>
-                <select
-                  className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm focus:outline-none focus:ring-2 focus:ring-[#adc6ff]/50 focus:border-[#adc6ff]"
-                  value={manualSemesterCount}
-                  onChange={(event) => setManualSemesterCount(Number(event.target.value))}
-                >
+              <label className="input-group">
+                <span className="input-label">Number of semesters</span>
+                <select className="input-field" value={manualSemesterCount} onChange={(event) => setManualSemesterCount(Number(event.target.value))}>
                   {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
                     <option key={value} value={value}>{value}</option>
                   ))}
                 </select>
-              </div>
+              </label>
 
               <div className="space-y-3">
                 {manualSemesterGpas.map((value, index) => (
-                  <div key={`manual-sem-${index + 1}`}>
-                    <label className="block text-[10px] uppercase tracking-widest text-[#c2c6d6] mb-2">
-                      Semester {index + 1} GPA
-                    </label>
+                  <label key={`manual-sem-${index + 1}`} className="input-group">
+                    <span className="input-label">Semester {index + 1} GPA</span>
                     <input
                       type="number"
                       min={GPA_LIMITS.min}
@@ -462,108 +433,98 @@ export default function CalculatorPage() {
                       value={value}
                       onChange={(event) => handleManualGpaChange(index, event.target.value)}
                       placeholder="Enter GPA"
-                      className={`w-full bg-[#131b2e] border rounded-xl px-4 py-3 text-[#dae2fd] text-sm focus:outline-none focus:ring-2 focus:ring-[#adc6ff]/50 ${
-                        manualGpaErrors[index] ? "border-[#ff516a]/40" : "border-[#424754]/40"
-                      }`}
+                      className={manualGpaErrors[index] ? "input-field border-[#ffb4ab]/20 text-[#ffb4ab]" : "input-field"}
                     />
-                    {manualGpaErrors[index] ? (
-                      <p className="text-[11px] text-[#ffb4ab] mt-2">{manualGpaErrors[index]}</p>
-                    ) : null}
-                  </div>
+                    {manualGpaErrors[index] ? <span className="mt-2 text-xs text-[#ffb4ab]">{manualGpaErrors[index]}</span> : null}
+                  </label>
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={handleManualCgpaCalculate}
-                className="w-full font-bold py-4 rounded-xl text-sm mt-5"
-                style={{ background: "linear-gradient(to right, #adc6ff, #64d8d8)", color: "#002e6a" }}
-              >
+              <button type="button" onClick={handleManualCgpaCalculate} className="primary-button justify-center">
                 Calculate CGPA
               </button>
-            </div>
+            </section>
 
-            <div className="bg-[#171f33] rounded-xl p-6 border border-[#424754]/10">
-              <p className="text-[10px] uppercase tracking-widest text-[#8c909f] mb-2">Calculated CGPA</p>
-              <p className={`text-5xl font-black ${getGpaColor(manualCgpa || 0)}`}>
+            <section className="section-card">
+              <p className="eyebrow">Result</p>
+              <p className={`mt-3 text-5xl font-black tracking-tight ${getGpaColor(manualCgpa || 0)}`}>
                 {manualCgpa !== null ? manualCgpa.toFixed(2) : "--"}
               </p>
-              <p className="text-xs text-[#c2c6d6] mt-3">
+              <p className="mt-3 text-sm text-[#8c909f]">
                 {manualCgpa !== null
-                  ? "Computed from the semester GPA values you entered."
-                  : "Enter all semester GPAs and calculate to view the final CGPA."}
+                  ? "Calculated from the semester GPAs entered above."
+                  : "Enter all semester GPAs, then calculate to see the final CGPA."}
               </p>
-            </div>
-          </div>
+            </section>
+          </>
         )}
-      </div>
+      </main>
 
       {calculatorMode === "gpa" ? (
-        <>
-          <div className="fixed bottom-[5rem] left-0 right-0 bg-[#0b1326]/90 backdrop-blur-xl border-t border-[#424754]/20 px-6 py-3 z-40">
-            <div className="max-w-2xl mx-auto flex justify-between items-center">
+        <div className="fixed inset-x-0 bottom-20 z-40 px-4">
+          <div className="mx-auto flex max-w-2xl flex-col gap-3 rounded-[28px] border border-white/10 bg-[#0d1427]/96 p-4 shadow-2xl backdrop-blur-xl">
+            <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-[10px] uppercase tracking-widest font-bold text-[#8c909f]">Live GPA</p>
-                <p className="text-xs text-[#c2c6d6] mt-0.5">{gradedSubjects}/{subjects.length} subjects graded</p>
+                <p className="eyebrow">Current GPA</p>
+                <p className="mt-1 text-sm text-[#8c909f]">{gradedSubjects}/{subjects.length} subjects graded</p>
               </div>
-              <span className={`text-3xl font-black text-white font-mono ${getGpaColor(liveGPA)}`}>{liveGPA.toFixed(2)}</span>
+              <p className={`text-4xl font-black tracking-tight ${getGpaColor(liveGPA)}`}>{liveGPA.toFixed(2)}</p>
             </div>
+            <button
+              type="button"
+              className="primary-button justify-center"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Save Semester"}
+            </button>
+            <p className="text-center text-xs text-[#7f8aa3]">
+              {saveStatus || (autoCalculated ? "Saved automatically once all grades were complete." : "Complete all grades to save this semester.")}
+            </p>
           </div>
-
-          <div className="fixed bottom-[5rem] left-0 right-0 px-6 pb-0 pt-0 z-40 translate-y-[4.75rem]">
-            <div className="max-w-2xl mx-auto space-y-2">
-              <button
-                type="button"
-                className="w-full font-bold py-4 rounded-xl text-sm active:scale-95 transition-all disabled:opacity-50"
-                style={{ background: "linear-gradient(to right, #adc6ff, #64d8d8)", color: "#002e6a" }}
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? "Saving..." : "Save to History"}
-              </button>
-              <p className="text-center text-[11px] text-[#8c909f]">
-                {saveStatus || (autoCalculated ? "Completed GPA calculations are saved automatically." : "Completed GPA calculations are saved to history automatically.")}
-              </p>
-            </div>
-          </div>
-        </>
+        </div>
       ) : null}
 
       {showModal ? (
-        <div className="fixed inset-0 bg-black/60 flex items-end z-50">
-          <div className="bg-[#171f33] rounded-t-2xl px-6 pt-6 pb-10 border-t border-[#424754]/20 w-full">
-            <div className="max-w-2xl mx-auto">
-              <div className="w-10 h-1 bg-[#424754] rounded-full mx-auto mb-6" />
-              <h2 className="text-base font-bold text-[#dae2fd] mb-5">Add Missing Subject</h2>
-              <input
-                className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm mb-3 focus:ring-2 focus:ring-[#adc6ff]/50 outline-none placeholder:text-[#8c909f]"
-                placeholder="Subject Code"
-                value={newSubject.code}
-                onChange={(event) => setNewSubject({ ...newSubject, code: event.target.value })}
-              />
-              <input
-                className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm mb-3 focus:ring-2 focus:ring-[#adc6ff]/50 outline-none placeholder:text-[#8c909f]"
-                placeholder="Subject Name"
-                value={newSubject.name}
-                onChange={(event) => setNewSubject({ ...newSubject, name: event.target.value })}
-              />
-              <input
-                className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm mb-3 focus:ring-2 focus:ring-[#adc6ff]/50 outline-none placeholder:text-[#8c909f]"
-                placeholder="Credits"
-                type="number"
-                value={newSubject.credits}
-                onChange={(event) => setNewSubject({ ...newSubject, credits: event.target.value })}
-              />
-              <select
-                className="w-full bg-[#131b2e] border border-[#424754]/40 rounded-xl px-4 py-3 text-[#dae2fd] text-sm mb-3 focus:ring-2 focus:ring-[#adc6ff]/50 outline-none"
-                value={newSubject.type}
-                onChange={(event) => setNewSubject({ ...newSubject, type: event.target.value })}
-              >
-                <option value="theory">theory</option>
-                <option value="Laboratory">Laboratory</option>
-              </select>
-              <button type="button" className="w-full bg-[#adc6ff] text-[#002e6a] font-bold rounded-xl py-3.5 text-sm mb-3" onClick={addMissingSubject}>Add Subject</button>
-              <button type="button" className="w-full text-[#8c909f] text-sm text-center cursor-pointer py-2" onClick={() => setShowModal(false)}>Cancel</button>
+        <div className="fixed inset-0 z-50 bg-black/60 px-4 py-6 backdrop-blur-sm">
+          <div className="mx-auto flex min-h-full max-w-lg items-end sm:items-center">
+            <div className="w-full rounded-[32px] border border-white/10 bg-[#131b2e] p-6 shadow-2xl">
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <p className="eyebrow">Manual subject</p>
+                  <h2 className="mt-2 text-xl font-semibold text-[#f3f6ff]">Add missing subject</h2>
+                </div>
+                <button type="button" onClick={() => setShowModal(false)} className="icon-button">
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <label className="input-group">
+                  <span className="input-label">Subject code</span>
+                  <input className="input-field" value={newSubject.code} onChange={(event) => setNewSubject({ ...newSubject, code: event.target.value })} />
+                </label>
+                <label className="input-group">
+                  <span className="input-label">Subject name</span>
+                  <input className="input-field" value={newSubject.name} onChange={(event) => setNewSubject({ ...newSubject, name: event.target.value })} />
+                </label>
+                <label className="input-group">
+                  <span className="input-label">Credits</span>
+                  <input className="input-field" type="number" value={newSubject.credits} onChange={(event) => setNewSubject({ ...newSubject, credits: event.target.value })} />
+                </label>
+                <label className="input-group">
+                  <span className="input-label">Type</span>
+                  <select className="input-field" value={newSubject.type} onChange={(event) => setNewSubject({ ...newSubject, type: event.target.value })}>
+                    <option value="theory">theory</option>
+                    <option value="Laboratory">Laboratory</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button type="button" className="primary-button justify-center" onClick={addMissingSubject}>Add Subject</button>
+                <button type="button" className="secondary-button justify-center" onClick={() => setShowModal(false)}>Cancel</button>
+              </div>
             </div>
           </div>
         </div>
