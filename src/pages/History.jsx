@@ -43,6 +43,7 @@ export default function History() {
   }, [navigate])
 
   const latestSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null
+  const savedSummary = semesters.length === 1 ? "1 saved calculation" : `${semesters.length} saved calculations`
 
   if (loading) {
     return (
@@ -69,21 +70,13 @@ export default function History() {
 
       <main className="app-content space-y-5">
         <section className="section-card section-card--hero">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="eyebrow">Overall CGPA</p>
-              <p className={`mt-2 text-5xl font-black tracking-tight ${getGpaColorClass(cgpa)}`}>{cgpa.toFixed(2)}</p>
-              <p className="mt-3 text-sm text-[#a8b1c7]">
-                {latestSemester
-                  ? `Latest saved semester: ${latestSemester.semNum}`
-                  : "No saved semesters yet. Start with your first GPA calculation."}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-[#8c909f]">Saved</p>
-              <p className="mt-1 text-2xl font-bold text-[#dae2fd]">{semesters.length}</p>
-            </div>
-          </div>
+          <p className="eyebrow">Overall CGPA</p>
+          <p className={`mt-2 text-5xl font-black tracking-tight ${getGpaColorClass(cgpa)}`}>{cgpa.toFixed(2)}</p>
+          <p className="mt-3 text-sm leading-6 text-[#a8b1c7]">
+            {latestSemester
+              ? `You're currently tracking through semester ${latestSemester.semNum}. Open the calculator to update your next result or review saved semesters below.`
+              : "Start with the calculator, save your semester result, and your academic history will appear here."}
+          </p>
 
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <button type="button" onClick={() => navigate("/calculator")} className="primary-button">
@@ -95,11 +88,30 @@ export default function History() {
           </div>
         </section>
 
+        <section className="section-card">
+          <div className="list-row">
+            <div className="list-row__icon">
+              <span className="material-symbols-outlined text-[20px] text-[#adc6ff]">history</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[#f3f6ff]">History</p>
+              <p className="mt-1 text-sm text-[#8c909f]">
+                {latestSemester
+                  ? `${savedSummary}. Latest entry: semester ${latestSemester.semNum}.`
+                  : "No saved calculations yet."}
+              </p>
+            </div>
+          </div>
+        </section>
+
         {semesters.length === 0 ? (
           <section className="section-card py-12 text-center">
             <span className="material-symbols-outlined text-5xl text-[#31394d]">history</span>
             <h2 className="mt-4 text-lg font-semibold text-[#dae2fd]">No semesters saved yet</h2>
-            <p className="mt-2 text-sm text-[#8c909f]">Your semester results will appear here once you save a completed calculation.</p>
+            <p className="mt-2 text-sm leading-6 text-[#8c909f]">Your semester results will appear here once you save a completed calculation.</p>
+            <button type="button" onClick={() => navigate("/calculator")} className="primary-button mt-6 justify-center">
+              Calculate Your First Semester
+            </button>
           </section>
         ) : (
           <section className="space-y-3">

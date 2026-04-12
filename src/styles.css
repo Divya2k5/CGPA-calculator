@@ -286,6 +286,24 @@ textarea {
   padding: 0.95rem 1rem;
 }
 
+.list-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.list-row__icon {
+  display: inline-flex;
+  height: 2.9rem;
+  width: 2.9rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  background: rgba(173, 198, 255, 0.08);
+  border: 1px solid rgba(173, 198, 255, 0.12);
+}
+
 .profile-row {
   display: flex;
   align-items: flex-start;

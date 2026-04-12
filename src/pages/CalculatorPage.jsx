@@ -59,6 +59,7 @@ export default function CalculatorPage() {
   const [manualSemesterGpas, setManualSemesterGpas] = useState(() => buildEmptyGpaInputs(DEFAULT_MANUAL_CGPA_SEMESTERS));
   const [manualGpaErrors, setManualGpaErrors] = useState(() => buildEmptyErrors(DEFAULT_MANUAL_CGPA_SEMESTERS));
   const [manualCgpa, setManualCgpa] = useState(null);
+  const [manualCgpaMessage, setManualCgpaMessage] = useState("");
   const [lastSavedSignature, setLastSavedSignature] = useState("");
 
   const departmentOptions = getDepartmentOptions(regulation);
@@ -174,6 +175,7 @@ export default function CalculatorPage() {
       currentIndex === index ? "" : entry
     )));
     setManualCgpa(null);
+    setManualCgpaMessage("");
   };
 
   const handleManualCgpaCalculate = () => {
@@ -195,10 +197,20 @@ export default function CalculatorPage() {
 
     if (nextErrors.some(Boolean)) {
       setManualCgpa(null);
+      setManualCgpaMessage("Fill every semester GPA with a valid value before calculating.");
       return;
     }
 
     setManualCgpa(calculateManualCGPA(manualSemesterGpas.map((value) => Number(value))));
+    setManualCgpaMessage("CGPA updated from the semester GPAs entered below.");
+  };
+
+  const resetManualCgpa = () => {
+    setManualSemesterCount(DEFAULT_MANUAL_CGPA_SEMESTERS);
+    setManualSemesterGpas(buildEmptyGpaInputs(DEFAULT_MANUAL_CGPA_SEMESTERS));
+    setManualGpaErrors(buildEmptyErrors(DEFAULT_MANUAL_CGPA_SEMESTERS));
+    setManualCgpa(null);
+    setManualCgpaMessage("");
   };
 
   const handleSave = () => {
@@ -297,6 +309,22 @@ export default function CalculatorPage() {
 
         {calculatorMode === "gpa" ? (
           <>
+            <section className="section-card">
+              <p className="eyebrow">Result</p>
+              <div className="mt-3 flex items-end justify-between gap-4">
+                <div>
+                  <p className={`text-5xl font-black tracking-tight ${getGpaColor(liveGPA)}`}>{liveGPA.toFixed(2)}</p>
+                  <p className="mt-2 text-sm text-[#8c909f]">{gradedSubjects}/{subjects.length} subjects graded</p>
+                </div>
+                <button type="button" onClick={() => navigate("/")} className="secondary-button !w-auto whitespace-nowrap px-4">
+                  View History
+                </button>
+              </div>
+              <p className="mt-4 text-sm leading-6 text-[#8c909f]">
+                Select the department and semester, enter all grades, then save the result once your GPA is complete.
+              </p>
+            </section>
+
             <section className="section-card space-y-4">
               <div className="section-heading">
                 <div>
@@ -344,14 +372,6 @@ export default function CalculatorPage() {
               </div>
             </section>
 
-            <section className="section-card border-[#ffb4ab]/10 bg-[#181823]">
-              <p className="eyebrow">Smart Scan</p>
-              <p className="mt-2 text-sm font-semibold text-[#f3f6ff]">Temporarily unavailable</p>
-              <p className="mt-2 text-sm leading-6 text-[#8c909f]">
-                Image upload, OCR, Gemini extraction, and Smart Scan entry points remain hidden until the extraction flow is fixed.
-              </p>
-            </section>
-
             <section className="section-card space-y-4">
               <div className="section-heading">
                 <div>
@@ -364,6 +384,10 @@ export default function CalculatorPage() {
                   </button>
                 ) : null}
               </div>
+
+              <p className="text-sm leading-6 text-[#8c909f]">
+                Each subject uses the Anna University grade scale. You can keep editing before saving the final semester result.
+              </p>
 
               {subjects.length === 0 ? (
                 <div className="rounded-3xl border border-dashed border-white/10 bg-[#0e1629] px-5 py-10 text-center">
@@ -421,6 +445,10 @@ export default function CalculatorPage() {
                 </select>
               </label>
 
+              <p className="text-sm leading-6 text-[#8c909f]">
+                Enter each semester GPA in order. This mode is useful when you already know your semester GPAs and only need the final CGPA.
+              </p>
+
               <div className="space-y-3">
                 {manualSemesterGpas.map((value, index) => (
                   <label key={`manual-sem-${index + 1}`} className="input-group">
@@ -440,9 +468,14 @@ export default function CalculatorPage() {
                 ))}
               </div>
 
-              <button type="button" onClick={handleManualCgpaCalculate} className="primary-button justify-center">
-                Calculate CGPA
-              </button>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button type="button" onClick={handleManualCgpaCalculate} className="primary-button justify-center">
+                  Calculate CGPA
+                </button>
+                <button type="button" onClick={resetManualCgpa} className="secondary-button justify-center">
+                  Reset Inputs
+                </button>
+              </div>
             </section>
 
             <section className="section-card">
@@ -455,21 +488,23 @@ export default function CalculatorPage() {
                   ? "Calculated from the semester GPAs entered above."
                   : "Enter all semester GPAs, then calculate to see the final CGPA."}
               </p>
+              {manualCgpaMessage ? (
+                <p className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${
+                  manualCgpa !== null
+                    ? "border-[#64d8d8]/10 bg-[#64d8d8]/5 text-[#9fe4e4]"
+                    : "border-[#ffb4ab]/10 bg-[#ffb4ab]/5 text-[#ffb4ab]"
+                }`}>
+                  {manualCgpaMessage}
+                </p>
+              ) : null}
             </section>
           </>
         )}
       </main>
 
       {calculatorMode === "gpa" ? (
-        <div className="fixed inset-x-0 bottom-20 z-40 px-4">
+        <div className="fixed inset-x-0 bottom-20 z-40 px-4 md:hidden">
           <div className="mx-auto flex max-w-2xl flex-col gap-3 rounded-[28px] border border-white/10 bg-[#0d1427]/96 p-4 shadow-2xl backdrop-blur-xl">
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="eyebrow">Current GPA</p>
-                <p className="mt-1 text-sm text-[#8c909f]">{gradedSubjects}/{subjects.length} subjects graded</p>
-              </div>
-              <p className={`text-4xl font-black tracking-tight ${getGpaColor(liveGPA)}`}>{liveGPA.toFixed(2)}</p>
-            </div>
             <button
               type="button"
               className="primary-button justify-center"
