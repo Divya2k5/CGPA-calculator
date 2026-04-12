@@ -1,9 +1,10 @@
 {
   "version": 2,
   "builds": [
-    { "src": "ecegpa.html", "use": "@vercel/static" }
+    { "src": "*.html", "use": "@vercel/static" },
+    { "src": "src/**", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/", "dest": "/ecegpa.html" }
+    { "src": "/", "dest": "/index.html" }
   ]
 }
