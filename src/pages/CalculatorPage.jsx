@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { auth } from "../firebase/config.js";
+import { auth, hasFirebaseConfig } from "../firebase/config.js";
 import {
   getDepartmentConfig,
   getDepartmentOptions,
   getSemesterOptions,
+  loadSubjectCatalog,
 } from "../data/syllabus.js";
 import { calculateGPA, calculateManualCGPA } from "../utils/gpaCalculator.js";
 import { saveCrowdsourcedSubject, saveSemesterResult } from "../firebase/firestore.js";
+import { FIREBASE_SETUP_MESSAGE, toAppErrorMessage } from "../utils/appErrors.js";
 import BottomNav from "../components/BottomNav.jsx";
 
 const CALCULATOR_MODES = [
@@ -42,11 +44,22 @@ function buildEmptyErrors(count) {
   return Array.from({ length: count }, () => "");
 }
 
+function formatSubjectCredits(credits) {
+  return Number.isFinite(Number(credits)) ? `${credits} credits` : "Credits unavailable";
+}
+
+function getStatusToneClass(tone) {
+  if (tone === "success") return "status-banner status-banner--success";
+  if (tone === "warning") return "status-banner status-banner--warning";
+  if (tone === "error") return "status-banner status-banner--error";
+  return "status-banner";
+}
+
 export default function CalculatorPage() {
   const navigate = useNavigate();
   const [calculatorMode, setCalculatorMode] = useState("gpa");
   const [regulation, setRegulation] = useState("2021");
-  const [department, setDepartment] = useState("ECE");
+  const [department, setDepartment] = useState("");
   const [semester, setSemester] = useState(1);
   const [subjects, setSubjects] = useState([]);
   const [liveGPA, setLiveGPA] = useState(0);
@@ -54,6 +67,7 @@ export default function CalculatorPage() {
   const [newSubject, setNewSubject] = useState({ code: "", name: "", credits: "", type: "theory" });
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
+  const [saveStatusTone, setSaveStatusTone] = useState("muted");
   const [autoCalculated, setAutoCalculated] = useState(false);
   const [manualSemesterCount, setManualSemesterCount] = useState(DEFAULT_MANUAL_CGPA_SEMESTERS);
   const [manualSemesterGpas, setManualSemesterGpas] = useState(() => buildEmptyGpaInputs(DEFAULT_MANUAL_CGPA_SEMESTERS));
@@ -61,38 +75,104 @@ export default function CalculatorPage() {
   const [manualCgpa, setManualCgpa] = useState(null);
   const [manualCgpaMessage, setManualCgpaMessage] = useState("");
   const [lastSavedSignature, setLastSavedSignature] = useState("");
+  const [subjectCatalog, setSubjectCatalog] = useState(null);
+  const [subjectCatalogStatus, setSubjectCatalogStatus] = useState("loading");
+  const [subjectCatalogError, setSubjectCatalogError] = useState("");
+  const [subjectModalError, setSubjectModalError] = useState("");
+  const [subjectModalLoading, setSubjectModalLoading] = useState(false);
 
-  const departmentOptions = getDepartmentOptions(regulation);
-  const departmentConfig = getDepartmentConfig(regulation, department);
-  const semesterOptions = getSemesterOptions(regulation, department);
+  const departmentOptions = getDepartmentOptions(subjectCatalog, regulation);
+  const departmentConfig = getDepartmentConfig(subjectCatalog, regulation, department);
+  const semesterOptions = getSemesterOptions(subjectCatalog, regulation, department);
   const gradedSubjects = subjects.filter((subject) => subject.grade).length;
 
   useEffect(() => {
-    if (!departmentOptions.some((option) => option.value === department)) {
-      setDepartment(departmentOptions[0]?.value || "ECE");
-    }
-  }, [departmentOptions, department]);
+    let cancelled = false;
+
+    setSubjectCatalogStatus("loading");
+    setSubjectCatalogError("");
+
+    loadSubjectCatalog()
+      .then((catalog) => {
+        if (cancelled) return;
+        setSubjectCatalog(catalog);
+        setSubjectCatalogStatus("ready");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setSubjectCatalog(null);
+        setSubjectCatalogStatus("error");
+        setSubjectCatalogError(toAppErrorMessage(error, "The subject catalog could not be loaded."));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    if (!semesterOptions.includes(semester)) {
-      setSemester(semesterOptions[0] || 1);
+    if (subjectCatalogStatus !== "ready") {
+      return;
     }
-  }, [semesterOptions, semester]);
+
+    const nextDepartmentOptions = getDepartmentOptions(subjectCatalog, regulation);
+
+    if (nextDepartmentOptions.length === 0) {
+      if (department !== "") {
+        setDepartment("");
+      }
+      return;
+    }
+
+    if (!nextDepartmentOptions.some((option) => option.value === department)) {
+      setDepartment(nextDepartmentOptions[0]?.value || "");
+    }
+  }, [department, regulation, subjectCatalog, subjectCatalogStatus]);
 
   useEffect(() => {
+    if (subjectCatalogStatus !== "ready") {
+      return;
+    }
+
+    const nextSemesterOptions = getSemesterOptions(subjectCatalog, regulation, department);
+
+    if (nextSemesterOptions.length === 0) {
+      if (semester !== 1) {
+        setSemester(1);
+      }
+      return;
+    }
+
+    if (!nextSemesterOptions.includes(semester)) {
+      setSemester(nextSemesterOptions[0] || 1);
+    }
+  }, [department, regulation, semester, subjectCatalog, subjectCatalogStatus]);
+
+  useEffect(() => {
+    if (subjectCatalogStatus !== "ready") {
+      setSubjects([]);
+      setLiveGPA(0);
+      setSaveStatus("");
+      setSaveStatusTone("muted");
+      setAutoCalculated(false);
+      setLastSavedSignature("");
+      return;
+    }
+
     const data = departmentConfig?.semesters?.[semester];
 
-    if (data) {
-      setSubjects(data.map((subject) => ({ ...subject, grade: "" })));
+    if (data?.subjects?.length > 0) {
+      setSubjects(data.subjects.map((subject) => ({ ...subject, grade: "" })));
     } else {
       setSubjects([]);
     }
 
     setLiveGPA(0);
     setSaveStatus("");
+    setSaveStatusTone("muted");
     setAutoCalculated(false);
     setLastSavedSignature("");
-  }, [departmentConfig, semester]);
+  }, [departmentConfig, semester, subjectCatalogStatus]);
 
   useEffect(() => {
     if (subjects.length === 0) {
@@ -108,7 +188,7 @@ export default function CalculatorPage() {
       return;
     }
 
-    const uid = auth.currentUser?.uid;
+    const uid = auth?.currentUser?.uid;
     if (!uid) {
       return;
     }
@@ -141,10 +221,12 @@ export default function CalculatorPage() {
         setLastSavedSignature(signature);
         setAutoCalculated(true);
         setSaveStatus("Saved automatically.");
+        setSaveStatusTone("success");
       })
       .catch((err) => {
         if (!cancelled) {
-          setSaveStatus(err.message);
+          setSaveStatus(toAppErrorMessage(err, "Automatic save is unavailable right now."));
+          setSaveStatusTone("error");
         }
       });
 
@@ -165,6 +247,22 @@ export default function CalculatorPage() {
     const nextSubjects = [...subjects];
     nextSubjects[index] = { ...nextSubjects[index], grade };
     setSubjects(nextSubjects);
+  };
+
+  const handleReloadSubjectData = () => {
+    setSubjectCatalogStatus("loading");
+    setSubjectCatalogError("");
+
+    loadSubjectCatalog({ forceReload: true })
+      .then((catalog) => {
+        setSubjectCatalog(catalog);
+        setSubjectCatalogStatus("ready");
+      })
+      .catch((error) => {
+        setSubjectCatalog(null);
+        setSubjectCatalogStatus("error");
+        setSubjectCatalogError(toAppErrorMessage(error, "The subject catalog could not be loaded."));
+      });
   };
 
   const handleManualGpaChange = (index, value) => {
@@ -219,13 +317,15 @@ export default function CalculatorPage() {
     const uid = auth?.currentUser?.uid;
 
     if (!uid) {
-      alert("Not logged in");
+      setSaveStatus(hasFirebaseConfig ? "Sign in again to save this semester." : FIREBASE_SETUP_MESSAGE);
+      setSaveStatusTone("error");
       setSaving(false);
       return;
     }
 
     if (!result.isComplete) {
-      alert("Enter grades for all subjects to save this semester.");
+      setSaveStatus("Enter grades for every subject before saving.");
+      setSaveStatusTone("warning");
       setSaving(false);
       return;
     }
@@ -248,28 +348,91 @@ export default function CalculatorPage() {
         setLastSavedSignature(signature);
         setAutoCalculated(true);
         setSaveStatus("Saved to history.");
+        setSaveStatusTone("success");
         setSaving(false);
       })
       .catch((err) => {
-        alert(err.message);
+        setSaveStatus(toAppErrorMessage(err, "This semester could not be saved right now."));
+        setSaveStatusTone("error");
         setSaving(false);
       });
   };
 
-  const addMissingSubject = () => {
-    if (Object.values(newSubject).some((value) => value === "")) {
-      alert("Fill all fields");
+  const addMissingSubject = async () => {
+    const code = newSubject.code.trim();
+    const name = newSubject.name.trim();
+    const credits = Number(newSubject.credits);
+    const type = newSubject.type.trim().toLowerCase() || "theory";
+    const creditsValue = newSubject.credits.trim();
+
+    if (!code || !name || !creditsValue) {
+      setSubjectModalError("Fill in the subject code, name, and credits.");
       return;
     }
 
-    const subject = { ...newSubject, credits: Number(newSubject.credits) };
+    if (!Number.isFinite(credits)) {
+      setSubjectModalError("Enter valid credits.");
+      return;
+    }
+
+    setSubjectModalLoading(true);
+    setSubjectModalError("");
+
+    const subject = {
+      code,
+      name,
+      credits,
+      type,
+    };
+
     setSubjects((previous) => [...previous, { ...subject, grade: "" }]);
-    saveCrowdsourcedSubject(regulation, department, semester, subject);
-    setNewSubject({ code: "", name: "", credits: "", type: "theory" });
-    setShowModal(false);
+
+    try {
+      await saveCrowdsourcedSubject(regulation, department, semester, subject);
+      setSaveStatus("Subject added. It will also be available in your saved semester record.");
+      setSaveStatusTone("success");
+      setNewSubject({ code: "", name: "", credits: "", type: "theory" });
+      setShowModal(false);
+    } catch (err) {
+      setSaveStatus(
+        hasFirebaseConfig
+          ? "Subject added locally, but syncing the suggestion failed."
+          : "Subject added locally. Configure Firebase to sync subject suggestions.",
+      );
+      setSaveStatusTone("warning");
+      setNewSubject({ code: "", name: "", credits: "", type: "theory" });
+      setShowModal(false);
+    } finally {
+      setSubjectModalLoading(false);
+    }
   };
 
-  const subjectSectionHeading = departmentConfig?.label || department;
+  const subjectSectionHeading = departmentConfig?.label || department || "Subjects";
+  const subjectSectionMessage = (() => {
+    if (subjectCatalogStatus === "loading") {
+      return "Loading subject catalog...";
+    }
+
+    if (subjectCatalogStatus === "error") {
+      return "Subject data could not be loaded.";
+    }
+
+    if (departmentOptions.length === 0) {
+      return "No subject data is available for the selected regulation.";
+    }
+
+    if (!departmentConfig) {
+      return "Select a department to load its semester subjects.";
+    }
+
+    if (semesterOptions.length === 0) {
+      return "No semester data is available for this department.";
+    }
+
+    return departmentConfig.hasBundledSubjects
+      ? "Bundled semester subjects are ready for this department."
+      : "This department is selectable, but bundled subjects have not been added yet.";
+  })();
 
   return (
     <div className="app-shell">
@@ -307,6 +470,12 @@ export default function CalculatorPage() {
           </div>
         </section>
 
+        {saveStatus ? (
+          <section className={getStatusToneClass(saveStatusTone)} role={saveStatusTone === "error" ? "alert" : "status"} aria-live="polite">
+            {saveStatus}
+          </section>
+        ) : null}
+
         {calculatorMode === "gpa" ? (
           <>
             <section className="section-card">
@@ -323,6 +492,19 @@ export default function CalculatorPage() {
               <p className="mt-4 text-sm leading-6 text-[#8c909f]">
                 Select the department and semester, enter all grades, then save the result once your GPA is complete.
               </p>
+              <div className="mt-5 hidden items-center justify-between gap-4 md:flex">
+                <p className="text-xs text-[#7f8aa3]">
+                  {autoCalculated ? "Saved automatically once all grades were complete." : "Manual save is available at any time on desktop."}
+                </p>
+                <button
+                  type="button"
+                  className="primary-button !w-auto justify-center px-5"
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  {saving ? "Saving..." : "Save Semester"}
+                </button>
+              </div>
             </section>
 
             <section className="section-card space-y-4">
@@ -344,7 +526,7 @@ export default function CalculatorPage() {
 
                 <label className="input-group sm:col-span-2">
                   <span className="input-label">Department</span>
-                  <select className="input-field" value={department} onChange={(event) => setDepartment(event.target.value)}>
+                  <select className="input-field" value={department} onChange={(event) => setDepartment(event.target.value)} disabled={subjectCatalogStatus !== "ready" || departmentOptions.length === 0}>
                     {departmentOptions.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
@@ -353,7 +535,7 @@ export default function CalculatorPage() {
 
                 <label className="input-group">
                   <span className="input-label">Semester</span>
-                  <select className="input-field" value={semester} onChange={(event) => setSemester(Number(event.target.value))}>
+                  <select className="input-field" value={semester} onChange={(event) => setSemester(Number(event.target.value))} disabled={subjectCatalogStatus !== "ready" || semesterOptions.length === 0}>
                     {semesterOptions.map((value) => (
                       <option key={value} value={value}>{value}</option>
                     ))}
@@ -363,11 +545,7 @@ export default function CalculatorPage() {
                 <div className="info-panel">
                   <p className="input-label">Subjects</p>
                   <p className="mt-2 text-sm font-medium text-[#dae2fd]">{subjectSectionHeading}</p>
-                  <p className="mt-1 text-xs text-[#8c909f]">
-                    {departmentConfig?.hasBundledSubjects
-                      ? "Bundled semester subjects are ready for this department."
-                      : "This department is selectable, but bundled subjects have not been added yet."}
-                  </p>
+                  <p className="mt-1 text-xs text-[#8c909f]">{subjectSectionMessage}</p>
                 </div>
               </div>
             </section>
@@ -389,11 +567,29 @@ export default function CalculatorPage() {
                 Each subject uses the Anna University grade scale. You can keep editing before saving the final semester result.
               </p>
 
-              {subjects.length === 0 ? (
+              {subjectCatalogStatus === "loading" ? (
+                <div className="rounded-3xl border border-dashed border-white/10 bg-[#0e1629] px-5 py-10 text-center">
+                  <span className="material-symbols-outlined text-5xl text-[#31394d]">cloud_download</span>
+                  <p className="mt-4 text-sm text-[#8c909f]">Loading subject data...</p>
+                </div>
+              ) : subjectCatalogStatus === "error" ? (
+                <div className="rounded-3xl border border-[#ffb4ab]/20 bg-[#1a1220] px-5 py-8 text-center">
+                  <span className="material-symbols-outlined text-5xl text-[#ffb4ab]">error</span>
+                  <h3 className="mt-4 text-base font-semibold text-[#f3f6ff]">Subject data failed to load</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#8c909f]">{subjectCatalogError}</p>
+                  <button type="button" onClick={handleReloadSubjectData} className="primary-button mt-5 justify-center">
+                    Retry Loading
+                  </button>
+                </div>
+              ) : subjects.length === 0 ? (
                 <div className="rounded-3xl border border-dashed border-white/10 bg-[#0e1629] px-5 py-10 text-center">
                   <span className="material-symbols-outlined text-5xl text-[#31394d]">school</span>
                   <p className="mt-4 text-sm text-[#8c909f]">
-                    {departmentConfig?.hasBundledSubjects ? "No subjects found for this semester." : "Add subjects manually for this department."}
+                    {departmentOptions.length === 0
+                      ? "No subject data is available for the selected regulation."
+                      : departmentConfig?.hasBundledSubjects
+                        ? "No subjects found for this semester."
+                        : "Add subjects manually for this department."}
                   </p>
                 </div>
               ) : (
@@ -402,7 +598,9 @@ export default function CalculatorPage() {
                     <div key={`${subject.code}-${index}`} className="rounded-3xl border border-white/5 bg-[#0e1629] p-4">
                       <div className="mb-3">
                         <p className="text-sm font-semibold leading-6 text-[#f3f6ff]">{subject.name}</p>
-                        <p className="mt-1 text-[11px] text-[#7f8aa3]">{subject.code} - {subject.credits} credits</p>
+                        <p className="mt-1 text-[11px] text-[#7f8aa3]">
+                          {subject.code || "Subject"} - {formatSubjectCredits(subject.credits)}
+                        </p>
                       </div>
                       <select
                         value={subject.grade}
@@ -420,7 +618,14 @@ export default function CalculatorPage() {
                 </div>
               )}
 
-              <button type="button" className="secondary-button justify-center" onClick={() => setShowModal(true)}>
+              <button
+                type="button"
+                className="secondary-button justify-center"
+                onClick={() => {
+                  setSubjectModalError("");
+                  setShowModal(true);
+                }}
+              >
                 <span className="material-symbols-outlined text-[18px]">add_circle</span>
                 Add Missing Subject
               </button>
@@ -513,7 +718,15 @@ export default function CalculatorPage() {
             >
               {saving ? "Saving..." : "Save Semester"}
             </button>
-            <p className="text-center text-xs text-[#7f8aa3]">
+            <p className={`text-center text-xs ${
+              saveStatusTone === "error"
+                ? "text-[#ffb4ab]"
+                : saveStatusTone === "success"
+                  ? "text-[#9fe4e4]"
+                  : saveStatusTone === "warning"
+                    ? "text-[#f9c97f]"
+                    : "text-[#7f8aa3]"
+            }`}>
               {saveStatus || (autoCalculated ? "Saved automatically once all grades were complete." : "Complete all grades to save this semester.")}
             </p>
           </div>
@@ -529,36 +742,62 @@ export default function CalculatorPage() {
                   <p className="eyebrow">Manual subject</p>
                   <h2 className="mt-2 text-xl font-semibold text-[#f3f6ff]">Add missing subject</h2>
                 </div>
-                <button type="button" onClick={() => setShowModal(false)} className="icon-button">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubjectModalError("");
+                    setShowModal(false);
+                  }}
+                  className="icon-button"
+                  disabled={subjectModalLoading}
+                >
                   <span className="material-symbols-outlined text-[18px]">close</span>
                 </button>
               </div>
 
+              {subjectModalError ? (
+                <p className="status-banner status-banner--error mb-4" role="alert" aria-live="assertive">
+                  {subjectModalError}
+                </p>
+              ) : null}
+
               <div className="space-y-4">
                 <label className="input-group">
                   <span className="input-label">Subject code</span>
-                  <input className="input-field" value={newSubject.code} onChange={(event) => setNewSubject({ ...newSubject, code: event.target.value })} />
+                  <input className="input-field" value={newSubject.code} onChange={(event) => setNewSubject({ ...newSubject, code: event.target.value })} disabled={subjectModalLoading} />
                 </label>
                 <label className="input-group">
                   <span className="input-label">Subject name</span>
-                  <input className="input-field" value={newSubject.name} onChange={(event) => setNewSubject({ ...newSubject, name: event.target.value })} />
+                  <input className="input-field" value={newSubject.name} onChange={(event) => setNewSubject({ ...newSubject, name: event.target.value })} disabled={subjectModalLoading} />
                 </label>
                 <label className="input-group">
                   <span className="input-label">Credits</span>
-                  <input className="input-field" type="number" value={newSubject.credits} onChange={(event) => setNewSubject({ ...newSubject, credits: event.target.value })} />
+                  <input className="input-field" type="number" value={newSubject.credits} onChange={(event) => setNewSubject({ ...newSubject, credits: event.target.value })} disabled={subjectModalLoading} />
                 </label>
                 <label className="input-group">
                   <span className="input-label">Type</span>
-                  <select className="input-field" value={newSubject.type} onChange={(event) => setNewSubject({ ...newSubject, type: event.target.value })}>
+                  <select className="input-field" value={newSubject.type} onChange={(event) => setNewSubject({ ...newSubject, type: event.target.value })} disabled={subjectModalLoading}>
                     <option value="theory">theory</option>
-                    <option value="Laboratory">Laboratory</option>
+                    <option value="lab">lab</option>
                   </select>
                 </label>
               </div>
 
               <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <button type="button" className="primary-button justify-center" onClick={addMissingSubject}>Add Subject</button>
-                <button type="button" className="secondary-button justify-center" onClick={() => setShowModal(false)}>Cancel</button>
+                <button type="button" className="primary-button justify-center" onClick={addMissingSubject} disabled={subjectModalLoading}>
+                  {subjectModalLoading ? "Adding..." : "Add Subject"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button justify-center"
+                  onClick={() => {
+                    setSubjectModalError("");
+                    setShowModal(false);
+                  }}
+                  disabled={subjectModalLoading}
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>

@@ -1,16 +1,40 @@
-const STATIC_CACHE = "au-cgpa-static-v1";
-const ASSETS = [
-  "/",
+const STATIC_CACHE = "au-cgpa-static-v2";
+const STATIC_ASSETS = [
+  "/offline.html",
   "/manifest.webmanifest",
+  "/subjects-data.js",
   "/favicon.svg",
-  "/apple-touch-icon.svg",
-  "/pwa-192x192.svg",
-  "/pwa-512x512.svg",
+  "/apple-touch-icon.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/maskable-icon-512.png",
 ];
+
+const CACHEABLE_DESTINATIONS = new Set(["style", "script", "worker", "image", "font", "manifest"]);
+
+function isCacheableResponse(response) {
+  return Boolean(response) && response.status === 200 && response.type === "basic";
+}
+
+function shouldHandleAssetRequest(request, url) {
+  if (url.pathname.startsWith("/api/")) {
+    return false;
+  }
+
+  if (request.headers.has("authorization")) {
+    return false;
+  }
+
+  if (CACHEABLE_DESTINATIONS.has(request.destination)) {
+    return true;
+  }
+
+  return STATIC_ASSETS.includes(url.pathname);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll(ASSETS))
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)),
   );
   self.skipWaiting();
 });
@@ -18,12 +42,8 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== STATIC_CACHE)
-          .map((key) => caches.delete(key))
-      )
-    )
+      Promise.all(keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key))),
+    ),
   );
   self.clients.claim();
 });
@@ -40,8 +60,12 @@ self.addEventListener("fetch", (event) => {
 
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match("/") || Response.error())
+      fetch(event.request).catch(() => caches.match("/offline.html") || Response.error()),
     );
+    return;
+  }
+
+  if (!shouldHandleAssetRequest(event.request, requestUrl)) {
     return;
   }
 
@@ -51,15 +75,16 @@ self.addEventListener("fetch", (event) => {
         return cachedResponse;
       }
 
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== "basic") {
-          return networkResponse;
-        }
+      return fetch(event.request)
+        .then((networkResponse) => {
+          if (isCacheableResponse(networkResponse)) {
+            const responseClone = networkResponse.clone();
+            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, responseClone));
+          }
 
-        const responseClone = networkResponse.clone();
-        caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, responseClone));
-        return networkResponse;
-      });
-    })
+          return networkResponse;
+        })
+        .catch(() => Response.error());
+    }),
   );
 });

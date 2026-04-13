@@ -1,4 +1,4 @@
-import { auth } from "./config.js";
+import { auth, firebaseSetupMessage } from "./config.js";
 import {
   GoogleAuthProvider,
   signInWithPopup,
@@ -10,43 +10,27 @@ import {
 
 function requireAuth() {
   if (!auth) {
-    throw new Error("Firebase is not configured. Add your VITE_* values to a .env file.");
+    throw new Error(firebaseSetupMessage);
   }
 
   return auth;
 }
 
 export async function signInWithGoogle() {
-  try {
-    const provider = new GoogleAuthProvider();
-    return await signInWithPopup(requireAuth(), provider);
-  } catch (error) {
-    throw error;
-  }
+  const provider = new GoogleAuthProvider();
+  return signInWithPopup(requireAuth(), provider);
 }
 
 export async function signInWithEmail(email, password) {
-  try {
-    return await signInWithEmailAndPassword(requireAuth(), email, password);
-  } catch (error) {
-    throw error;
-  }
+  return signInWithEmailAndPassword(requireAuth(), email, password);
 }
 
 export async function signUpWithEmail(email, password) {
-  try {
-    return await createUserWithEmailAndPassword(requireAuth(), email, password);
-  } catch (error) {
-    throw error;
-  }
+  return createUserWithEmailAndPassword(requireAuth(), email, password);
 }
 
 export async function logOut() {
-  try {
-    return await signOut(requireAuth());
-  } catch (error) {
-    throw error;
-  }
+  return signOut(requireAuth());
 }
 
 export function onAuthChange(callback) {

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { auth } from "../firebase/config.js"
 import { getAllSemesters } from "../firebase/firestore.js"
 import { calculateCGPA } from "../utils/gpaCalculator.js"
+import { toAppErrorMessage } from "../utils/appErrors.js"
 import BottomNav from "../components/BottomNav.jsx"
 
 function getGpaColorClass(value) {
@@ -24,6 +25,8 @@ export default function History() {
   const [semesters, setSemesters] = useState([])
   const [loading, setLoading] = useState(true)
   const [cgpa, setCgpa] = useState(0)
+  const [error, setError] = useState("")
+  const [reloadToken, setReloadToken] = useState(0)
 
   useEffect(() => {
     const uid = auth?.currentUser?.uid
@@ -37,10 +40,14 @@ export default function History() {
         const sorted = [...data].sort((a, b) => Number(a.semNum) - Number(b.semNum))
         setSemesters(sorted)
         setCgpa(calculateCGPA(sorted))
+        setError("")
         setLoading(false)
       })
-      .catch(() => setLoading(false))
-  }, [navigate])
+      .catch((err) => {
+        setError(toAppErrorMessage(err, "Your saved semesters could not be loaded right now."))
+        setLoading(false)
+      })
+  }, [navigate, reloadToken])
 
   const latestSemester = semesters.length > 0 ? semesters[semesters.length - 1] : null
   const savedSummary = semesters.length === 1 ? "1 saved calculation" : `${semesters.length} saved calculations`
@@ -69,6 +76,18 @@ export default function History() {
       </header>
 
       <main className="app-content space-y-5">
+        {error ? (
+          <section className="status-banner status-banner--error flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" role="alert" aria-live="assertive">
+            <span>{error}</span>
+            <button type="button" className="secondary-button !min-h-0 !w-auto justify-center px-4 py-2 text-sm" onClick={() => {
+              setLoading(true)
+              setReloadToken((value) => value + 1)
+            }}>
+              Retry
+            </button>
+          </section>
+        ) : null}
+
         <section className="section-card section-card--hero">
           <p className="eyebrow">Overall CGPA</p>
           <p className={`mt-2 text-5xl font-black tracking-tight ${getGpaColorClass(cgpa)}`}>{cgpa.toFixed(2)}</p>

@@ -31,6 +31,7 @@ body,
 
 body {
   margin: 0;
+  min-height: 100vh;
   background:
     radial-gradient(circle at top, rgba(173, 198, 255, 0.12), transparent 30%),
     linear-gradient(180deg, #09111f 0%, #0b1326 48%, #09111f 100%);
@@ -67,7 +68,7 @@ textarea {
 
 .app-shell {
   min-height: 100vh;
-  padding-bottom: 6rem;
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
 }
 
 .app-shell--centered {
@@ -105,6 +106,34 @@ textarea {
 
 .app-content {
   padding: 1.25rem 1rem 0;
+}
+
+.status-banner {
+  border: 1px solid rgba(173, 198, 255, 0.12);
+  background: rgba(173, 198, 255, 0.07);
+  color: #d8e4ff;
+  border-radius: 1.25rem;
+  padding: 0.95rem 1rem;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.status-banner--success {
+  border-color: rgba(100, 216, 216, 0.18);
+  background: rgba(100, 216, 216, 0.08);
+  color: #9fe4e4;
+}
+
+.status-banner--warning {
+  border-color: rgba(249, 201, 127, 0.18);
+  background: rgba(249, 201, 127, 0.08);
+  color: #f9d79f;
+}
+
+.status-banner--error {
+  border-color: rgba(255, 180, 171, 0.18);
+  background: rgba(255, 180, 171, 0.08);
+  color: #ffb4ab;
 }
 
 .eyebrow {
@@ -185,6 +214,11 @@ textarea {
   box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.08);
 }
 
+.input-field:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .input-field::placeholder {
   color: #647089;
 }
@@ -203,6 +237,16 @@ textarea {
 .danger-button:active,
 .icon-button:active {
   transform: scale(0.98);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.danger-button:focus-visible,
+.icon-button:focus-visible,
+.segmented-control__item:focus-visible,
+.input-field:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(173, 198, 255, 0.14);
 }
 
 .primary-button:disabled,
@@ -228,6 +272,7 @@ textarea {
 .primary-button {
   background: linear-gradient(135deg, #adc6ff, #7fd5d7);
   color: #08214b;
+  box-shadow: 0 16px 32px rgba(74, 146, 212, 0.18);
 }
 
 .secondary-button {
@@ -315,6 +360,11 @@ textarea {
 
 .profile-row + .profile-row {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.profile-row span:last-child {
+  max-width: 60%;
+  word-break: break-word;
 }
 
 .loading-mark {

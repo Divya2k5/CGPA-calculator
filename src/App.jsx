@@ -4,6 +4,7 @@ import CalculatorPage from "./pages/CalculatorPage.jsx"
 import History from "./pages/History.jsx"
 import Profile from "./pages/Profile.jsx"
 import ProtectedRoute from "./components/ProtectedRoute.jsx"
+import PwaBanner from "./components/PwaBanner.jsx"
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         } />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <PwaBanner />
     </BrowserRouter>
   )
 }

@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { FIREBASE_SETUP_MESSAGE } from "../utils/appErrors.js";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_API_KEY,
@@ -11,7 +12,10 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_APP_ID
 };
 
-const hasFirebaseConfig = Object.values(firebaseConfig).every(Boolean);
+export const hasFirebaseConfig = Object.values(firebaseConfig).every(
+  (value) => typeof value === "string" && value.trim().length > 0,
+);
+export const firebaseSetupMessage = FIREBASE_SETUP_MESSAGE;
 const app = hasFirebaseConfig ? initializeApp(firebaseConfig) : null;
 
 export const auth = app ? getAuth(app) : null;

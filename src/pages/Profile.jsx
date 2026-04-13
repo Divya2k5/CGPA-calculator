@@ -2,12 +2,29 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { auth } from "../firebase/config.js"
 import { logOut } from "../firebase/auth.js"
+import { toAppErrorMessage } from "../utils/appErrors.js"
 import BottomNav from "../components/BottomNav.jsx"
 
 export default function Profile() {
   const navigate = useNavigate()
-  const [email] = useState(auth.currentUser?.email || "student@annauniv.edu")
+  const [email] = useState(auth?.currentUser?.email || "No email available")
+  const [error, setError] = useState("")
+  const [loggingOut, setLoggingOut] = useState(false)
   const initial = email.slice(0, 1).toUpperCase()
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    setError("")
+
+    try {
+      await logOut()
+      navigate("/login", { replace: true })
+    } catch (err) {
+      setError(toAppErrorMessage(err, "Sign-out failed. Please try again."))
+    } finally {
+      setLoggingOut(false)
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -21,6 +38,12 @@ export default function Profile() {
       </header>
 
       <main className="app-content space-y-5">
+        {error ? (
+          <section className="status-banner status-banner--error" role="alert" aria-live="assertive">
+            {error}
+          </section>
+        ) : null}
+
         <section className="section-card text-center">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-[#111a2f] text-3xl font-black text-[#adc6ff]">
             {initial}
@@ -47,10 +70,11 @@ export default function Profile() {
         <button
           type="button"
           className="danger-button"
-          onClick={() => logOut().then(() => navigate("/login"))}
+          onClick={handleLogout}
+          disabled={loggingOut}
         >
           <span className="material-symbols-outlined text-[18px]">logout</span>
-          Sign Out
+          {loggingOut ? "Signing Out..." : "Sign Out"}
         </button>
       </main>
 

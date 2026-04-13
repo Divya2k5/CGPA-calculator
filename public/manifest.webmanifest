@@ -1,27 +1,35 @@
 {
+  "id": "/",
   "name": "AU CGPA Calculator",
   "short_name": "AU CGPA",
-  "description": "Minimal GPA and CGPA calculator for Anna University students.",
+  "description": "Installable GPA and CGPA calculator for Anna University students.",
   "theme_color": "#09111f",
   "background_color": "#09111f",
   "display": "standalone",
   "display_override": ["standalone", "browser"],
+  "lang": "en",
   "start_url": "/",
   "scope": "/",
   "orientation": "portrait-primary",
   "categories": ["education", "productivity", "utilities"],
   "icons": [
     {
-      "src": "/pwa-192x192.svg",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/pwa-512x512.svg",
+      "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

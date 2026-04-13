@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { auth, hasFirebaseConfig } from "../firebase/config.js";
 import { signInWithGoogle, signInWithEmail, signUpWithEmail } from "../firebase/auth.js";
+import { FIREBASE_SETUP_MESSAGE, toAppErrorMessage } from "../utils/appErrors.js";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -11,29 +13,64 @@ export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  useEffect(() => {
+    if (auth?.currentUser) {
+      navigate("/", { replace: true });
+    }
+  }, [navigate]);
+
   const handleGoogleSignIn = async () => {
+    if (!hasFirebaseConfig) {
+      setError(FIREBASE_SETUP_MESSAGE);
+      return;
+    }
+
     setLoading(true);
+    setError("");
     try {
       await signInWithGoogle();
       navigate("/");
     } catch (err) {
-      setError(err.message);
+      setError(toAppErrorMessage(err, "Google sign-in could not be completed."));
     } finally {
       setLoading(false);
     }
   };
 
   const handleEmailAuth = async () => {
+    const trimmedEmail = email.trim();
+
+    if (!hasFirebaseConfig) {
+      setError(FIREBASE_SETUP_MESSAGE);
+      return;
+    }
+
+    if (!trimmedEmail) {
+      setError("Enter your email address.");
+      return;
+    }
+
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+
+    if (isSignUp && password.length < 6) {
+      setError("Use a password with at least 6 characters.");
+      return;
+    }
+
     setLoading(true);
+    setError("");
     try {
       if (isSignUp) {
-        await signUpWithEmail(email, password);
+        await signUpWithEmail(trimmedEmail, password);
       } else {
-        await signInWithEmail(email, password);
+        await signInWithEmail(trimmedEmail, password);
       }
       navigate("/");
     } catch (err) {
-      setError(err.message);
+      setError(toAppErrorMessage(err, isSignUp ? "Account creation failed." : "Sign-in failed."));
     } finally {
       setLoading(false);
     }
@@ -51,10 +88,16 @@ export default function Login() {
         </div>
 
         <div className="section-card space-y-5">
+          {!hasFirebaseConfig ? (
+            <div className="status-banner status-banner--warning" role="status" aria-live="polite">
+              Firebase is not configured. Add the required `VITE_*` values before deploying authentication features.
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            disabled={loading}
+            disabled={loading || !hasFirebaseConfig}
             className="secondary-button justify-center bg-white text-[#0c1222] hover:bg-white"
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#adc6ff] text-xs font-bold text-[#002e6a]">G</span>
@@ -76,7 +119,8 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={loading}
+                disabled={loading || !hasFirebaseConfig}
+                autoComplete="email"
               />
             </label>
 
@@ -89,13 +133,15 @@ export default function Login() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || !hasFirebaseConfig}
+                  autoComplete={isSignUp ? "new-password" : "current-password"}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((prev) => !prev)}
                   className="absolute inset-y-0 right-0 flex items-center px-4 text-[#7f8aa3]"
-                  disabled={loading}
+                  disabled={loading || !hasFirebaseConfig}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   <span className="material-symbols-outlined text-[20px]">{showPassword ? "visibility_off" : "visibility"}</span>
                 </button>
@@ -106,7 +152,7 @@ export default function Login() {
           <button
             type="button"
             onClick={handleEmailAuth}
-            disabled={loading}
+            disabled={loading || !hasFirebaseConfig}
             className="primary-button justify-center"
           >
             {loading ? "Please wait..." : isSignUp ? "Create Account" : "Sign In"}
@@ -127,7 +173,11 @@ export default function Login() {
             </button>
           </div>
 
-          {error ? <p className="rounded-2xl border border-[#ffb4ab]/10 bg-[#ffb4ab]/5 px-4 py-3 text-sm text-[#ffb4ab]">{error}</p> : null}
+          {error ? (
+            <p className="status-banner status-banner--error" role="alert" aria-live="assertive">
+              {error}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

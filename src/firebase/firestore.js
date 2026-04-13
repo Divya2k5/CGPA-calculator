@@ -1,4 +1,4 @@
-import { db } from "./config.js";
+import { db, firebaseSetupMessage } from "./config.js";
 import {
   collection,
   doc,
@@ -10,7 +10,7 @@ import {
 
 function requireDb() {
   if (!db) {
-    throw new Error("Firebase is not configured. Add your VITE_* values to a .env file.");
+    throw new Error(firebaseSetupMessage);
   }
 
   return db;

@@ -12,7 +12,7 @@ export default function BottomNav() {
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-50 border-t border-white/5 bg-[#0c1428]/92 backdrop-blur-xl">
-      <div className="mx-auto flex h-20 max-w-2xl items-center justify-around px-3">
+      <div className="mx-auto flex h-20 max-w-2xl items-center justify-around px-3 pb-[env(safe-area-inset-bottom)]">
       {tabs.map((tab) => {
         const isActive = location.pathname === tab.path
 
@@ -21,6 +21,7 @@ export default function BottomNav() {
             key={tab.path}
             type="button"
             onClick={() => navigate(tab.path)}
+            aria-current={isActive ? "page" : undefined}
             className={isActive
               ? "flex min-w-[88px] flex-col items-center justify-center rounded-2xl bg-[#adc6ff]/12 px-4 py-2 text-[#dae2fd] transition-all"
               : "flex min-w-[88px] flex-col items-center justify-center rounded-2xl px-4 py-2 text-[#7f8aa3] transition-all hover:text-[#dae2fd]"}
